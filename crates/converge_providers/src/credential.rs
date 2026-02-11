@@ -193,4 +193,11 @@ mod tests {
         assert_eq!(k, "MY_KEY");
         assert_eq!(v, "my-value");
     }
+
+    #[test]
+    fn surrounding_whitespace_trimmed() {
+        let reader = mock_reader(&[("KEY", "  sk-ant-123  ")]);
+        let cred = resolve_credential_with("test", &["KEY"], reader).unwrap();
+        assert_eq!(cred.value(), "sk-ant-123");
+    }
 }

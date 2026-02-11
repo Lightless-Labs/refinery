@@ -93,7 +93,7 @@ impl ModelProvider for GeminiProvider {
 mod tests {
     use super::*;
 
-    use crate::credential::{Credential, resolve_credential_with};
+    use crate::credential::resolve_credential_with;
 
     fn test_credential() -> Credential {
         resolve_credential_with(

@@ -86,7 +86,7 @@ impl ModelProvider for CodexProvider {
 mod tests {
     use super::*;
 
-    use crate::credential::{Credential, resolve_credential_with};
+    use crate::credential::resolve_credential_with;
 
     fn test_credential() -> Credential {
         resolve_credential_with("codex", &["OPENAI_API_KEY"], |_| Ok("test-key".to_string()))
