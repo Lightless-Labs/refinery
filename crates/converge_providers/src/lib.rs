@@ -1,3 +1,4 @@
+pub mod credential;
 pub mod process;
 
 #[cfg(feature = "claude")]

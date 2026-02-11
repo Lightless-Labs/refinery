@@ -6,35 +6,35 @@ use converge_core::ModelProvider;
 use converge_core::error::ProviderError;
 use converge_core::types::{Message, ModelId};
 
+use crate::credential::{self, Credential};
 use crate::process;
 
 /// Codex CLI provider adapter.
 ///
 /// Invokes: `codex exec --json --sandbox read-only -- "PROMPT"`
 /// System prompt via: `--config developer_instructions="..."`
+///
+/// Supports: `OPENAI_API_KEY` (pay-per-use) or `CODEX_API_KEY` (for `codex exec`).
 #[derive(Debug)]
 pub struct CodexProvider {
     model_id: ModelId,
     binary_path: PathBuf,
-    api_key: String,
+    credential: Credential,
     timeout: Duration,
 }
 
 impl CodexProvider {
     /// Create a new Codex provider, validating credentials and binary.
     pub async fn new(timeout: Duration) -> Result<Self, ProviderError> {
-        let api_key =
-            std::env::var("OPENAI_API_KEY").map_err(|_| ProviderError::MissingCredential {
-                provider: "codex".to_string(),
-                var_name: "OPENAI_API_KEY".to_string(),
-            })?;
+        let credential =
+            credential::resolve_credential("codex", &["OPENAI_API_KEY", "CODEX_API_KEY"])?;
 
         let binary_path = process::resolve_binary("codex").await?;
 
         Ok(Self {
             model_id: ModelId::new("codex"),
             binary_path,
-            api_key,
+            credential,
             timeout,
         })
     }
@@ -62,7 +62,7 @@ impl ModelProvider for CodexProvider {
         let args = self.build_args(&system_prompt, &user_prompt);
         let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
 
-        let env_vars = [("OPENAI_API_KEY", self.api_key.as_str())];
+        let env_vars = [self.credential.as_env_pair()];
 
         let output = process::spawn_cli(
             &self.binary_path,
@@ -86,12 +86,19 @@ impl ModelProvider for CodexProvider {
 mod tests {
     use super::*;
 
+    use crate::credential::{Credential, resolve_credential_with};
+
+    fn test_credential() -> Credential {
+        resolve_credential_with("codex", &["OPENAI_API_KEY"], |_| Ok("test-key".to_string()))
+            .unwrap()
+    }
+
     #[test]
     fn build_args_contains_required_flags() {
         let provider = CodexProvider {
             model_id: ModelId::new("codex"),
             binary_path: PathBuf::from("/usr/local/bin/codex"),
-            api_key: "test-key".to_string(),
+            credential: test_credential(),
             timeout: Duration::from_secs(120),
         };
 

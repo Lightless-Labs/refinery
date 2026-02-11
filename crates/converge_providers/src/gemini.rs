@@ -6,17 +6,20 @@ use converge_core::ModelProvider;
 use converge_core::error::ProviderError;
 use converge_core::types::{Message, ModelId};
 
+use crate::credential::{self, Credential};
 use crate::process;
 
 /// Gemini CLI provider adapter.
 ///
 /// Invokes: `gemini --output-format json --model gemini-2.5-pro --sandbox --approval-mode plan --allowed-tools "" -- "PROMPT"`
 /// System prompt via: `GEMINI_SYSTEM_MD` env var
+///
+/// Supports: `GEMINI_API_KEY` (Google AI Studio) or `GOOGLE_API_KEY` (Vertex AI express mode).
 #[derive(Debug)]
 pub struct GeminiProvider {
     model_id: ModelId,
     binary_path: PathBuf,
-    api_key: String,
+    credential: Credential,
     model_name: String,
     timeout: Duration,
 }
@@ -24,18 +27,15 @@ pub struct GeminiProvider {
 impl GeminiProvider {
     /// Create a new Gemini provider, validating credentials and binary.
     pub async fn new(model_name: &str, timeout: Duration) -> Result<Self, ProviderError> {
-        let api_key =
-            std::env::var("GEMINI_API_KEY").map_err(|_| ProviderError::MissingCredential {
-                provider: "gemini".to_string(),
-                var_name: "GEMINI_API_KEY".to_string(),
-            })?;
+        let credential =
+            credential::resolve_credential("gemini", &["GEMINI_API_KEY", "GOOGLE_API_KEY"])?;
 
         let binary_path = process::resolve_binary("gemini").await?;
 
         Ok(Self {
             model_id: ModelId::new(format!("gemini-{model_name}")),
             binary_path,
-            api_key,
+            credential,
             model_name: model_name.to_string(),
             timeout,
         })
@@ -68,7 +68,7 @@ impl ModelProvider for GeminiProvider {
 
         // Gemini uses env var for system prompt (no --system-prompt flag)
         let env_vars = [
-            ("GEMINI_API_KEY", self.api_key.as_str()),
+            self.credential.as_env_pair(),
             ("GEMINI_SYSTEM_MD", system_prompt.as_str()),
         ];
 
@@ -93,12 +93,23 @@ impl ModelProvider for GeminiProvider {
 mod tests {
     use super::*;
 
+    use crate::credential::{Credential, resolve_credential_with};
+
+    fn test_credential() -> Credential {
+        resolve_credential_with(
+            "gemini",
+            &["GEMINI_API_KEY"],
+            |_| Ok("test-key".to_string()),
+        )
+        .unwrap()
+    }
+
     #[test]
     fn build_args_contains_required_flags() {
         let provider = GeminiProvider {
             model_id: ModelId::new("gemini-2.5-pro"),
             binary_path: PathBuf::from("/usr/local/bin/gemini"),
-            api_key: "test-key".to_string(),
+            credential: test_credential(),
             model_name: "gemini-2.5-pro".to_string(),
             timeout: Duration::from_secs(120),
         };

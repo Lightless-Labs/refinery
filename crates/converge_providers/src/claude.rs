@@ -6,16 +6,19 @@ use converge_core::ModelProvider;
 use converge_core::error::ProviderError;
 use converge_core::types::{Message, ModelId};
 
+use crate::credential::{self, Credential};
 use crate::process;
 
 /// Claude CLI provider adapter.
 ///
 /// Invokes: `claude -p --output-format json --tools "" --max-turns 1 --append-system-prompt "SYSTEM" -- "PROMPT"`
+///
+/// Supports: `ANTHROPIC_API_KEY` (pay-per-use) or `CLAUDE_CODE_OAUTH_TOKEN` (Pro/Max subscription).
 #[derive(Debug)]
 pub struct ClaudeProvider {
     model_id: ModelId,
     binary_path: PathBuf,
-    api_key: String,
+    credential: Credential,
     model_name: String,
     timeout: Duration,
 }
@@ -23,18 +26,17 @@ pub struct ClaudeProvider {
 impl ClaudeProvider {
     /// Create a new Claude provider, validating credentials and binary.
     pub async fn new(model_name: &str, timeout: Duration) -> Result<Self, ProviderError> {
-        let api_key =
-            std::env::var("ANTHROPIC_API_KEY").map_err(|_| ProviderError::MissingCredential {
-                provider: "claude".to_string(),
-                var_name: "ANTHROPIC_API_KEY".to_string(),
-            })?;
+        let credential = credential::resolve_credential(
+            "claude",
+            &["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
+        )?;
 
         let binary_path = process::resolve_binary("claude").await?;
 
         Ok(Self {
             model_id: ModelId::new(format!("claude-{model_name}")),
             binary_path,
-            api_key,
+            credential,
             model_name: model_name.to_string(),
             timeout,
         })
@@ -67,7 +69,16 @@ impl ModelProvider for ClaudeProvider {
         let args = self.build_args(&system_prompt, &user_prompt);
         let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
 
-        let env_vars = [("ANTHROPIC_API_KEY", self.api_key.as_str())];
+        // Claude CLI needs HOME to find ~/.claude.json (onboarding config)
+        let home = if self.credential.env_var() == "CLAUDE_CODE_OAUTH_TOKEN" {
+            std::env::var("HOME").ok()
+        } else {
+            None
+        };
+        let mut env_vars = vec![self.credential.as_env_pair()];
+        if let Some(ref home) = home {
+            env_vars.push(("HOME", home.as_str()));
+        }
 
         let output = process::spawn_cli(
             &self.binary_path,
@@ -90,12 +101,21 @@ impl ModelProvider for ClaudeProvider {
 mod tests {
     use super::*;
 
+    use crate::credential::resolve_credential_with;
+
+    fn test_credential() -> Credential {
+        resolve_credential_with("claude", &["ANTHROPIC_API_KEY"], |_| {
+            Ok("test-key".to_string())
+        })
+        .unwrap()
+    }
+
     #[test]
     fn build_args_contains_required_flags() {
         let provider = ClaudeProvider {
             model_id: ModelId::new("claude-sonnet"),
             binary_path: PathBuf::from("/usr/local/bin/claude"),
-            api_key: "test-key".to_string(),
+            credential: test_credential(),
             model_name: "sonnet".to_string(),
             timeout: Duration::from_secs(120),
         };
