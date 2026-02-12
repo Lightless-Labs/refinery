@@ -32,7 +32,7 @@ converge "What are the three most impactful breakthroughs in physics?" \
   --models claude,codex,gemini
 ```
 
-Each model proposes an answer, reviews the others, refines based on feedback, and repeats until consensus.
+Models propose, review, refine, and repeat until consensus.
 
 ## CLI Usage
 
@@ -46,14 +46,14 @@ converge "your prompt" --models claude,gemini
 
 Available models:
 
-| Alias | Provider | Default model |
-|-------|----------|---------------|
-| `claude` | Anthropic | claude-sonnet |
-| `claude-opus` | Anthropic | claude-opus |
+| Alias | Provider | Model |
+|-------|----------|-------|
 | `claude-sonnet` | Anthropic | claude-sonnet |
+| `claude-opus` | Anthropic | claude-opus |
 | `codex` | OpenAI | codex |
-| `gemini` | Google | gemini-2.5-pro |
 | `gemini-2.5-pro` | Google | gemini-2.5-pro |
+
+Short aliases: `claude` = `claude-sonnet`, `gemini` = `gemini-2.5-pro`.
 
 ### Options
 
@@ -83,13 +83,7 @@ converge "prompt" --models claude,codex --max-concurrent 4
 
 ### Output Formats
 
-Plain text (default)
-
-```sh
-converge "prompt" --models claude,codex
-```
-
-JSON for programmatic use
+Output is plain text by default. Get JSON for programmatic use
 
 ```sh
 converge "prompt" --models claude,codex --output-format json
@@ -100,17 +94,8 @@ converge "prompt" --models claude,codex --output-format json
   "status": "converged",
   "winner": { "model_id": "claude-sonnet", "answer": "..." },
   "final_round": 2,
-  "strategy": "vote-threshold",
-  "all_answers": [
-    { "model_id": "claude-sonnet", "answer": "...", "mean_score": 9.5 },
-    { "model_id": "codex", "answer": "...", "mean_score": 8.0 }
-  ],
-  "metadata": {
-    "total_rounds": 2,
-    "total_calls": 12,
-    "elapsed_ms": 45000,
-    "models_dropped": []
-  }
+  "all_answers": [{ "model_id": "...", "answer": "...", "mean_score": 9.5 }],
+  "metadata": { "total_rounds": 2, "total_calls": 12, "elapsed_ms": 45000 }
 }
 ```
 
@@ -132,16 +117,9 @@ cat question.txt | converge - --models claude,codex
 
 ### Verbose and Debug
 
-Show per-round progress
-
 ```sh
-converge "prompt" --models claude,codex --verbose
-```
-
-Show raw CLI invocations and responses
-
-```sh
-converge "prompt" --models claude,codex --debug
+converge "prompt" --models claude,codex --verbose  # per-round progress
+converge "prompt" --models claude,codex --debug    # raw CLI invocations
 ```
 
 ### Exit Codes
@@ -161,7 +139,6 @@ converge "prompt" --models claude,codex --debug
 Run the full consensus loop
 
 ```rust
-use std::sync::Arc;
 use std::time::Duration;
 use converge_core::{Engine, EngineConfig, ModelId, VoteThreshold};
 
@@ -186,6 +163,8 @@ println!("{}: {}", outcome.winner, outcome.answer);
 Step through rounds for fine-grained control
 
 ```rust
+use converge_core::ClosingDecision;
+
 let mut session = engine.start("prompt").await?;
 
 loop {
@@ -207,7 +186,7 @@ use converge_core::RoundOverrides;
 
 let overrides = RoundOverrides {
     additional_context: Some("Focus on recent developments".into()),
-    drop_models: vec![],
+    ..Default::default()
 };
 let round = session.next_round_with(overrides).await?;
 ```
@@ -218,9 +197,7 @@ Implement the `ModelProvider` trait
 
 ```rust
 use async_trait::async_trait;
-use converge_core::{ModelProvider, ModelId};
-use converge_core::types::Message;
-use converge_core::error::ProviderError;
+use converge_core::{ModelId, ModelProvider, Message, ProviderError};
 
 #[derive(Debug)]
 struct MyProvider { model_id: ModelId }
@@ -249,7 +226,7 @@ println!("{} calls/round, {} total", estimate.calls_per_round, estimate.total_ca
 
 ## Credentials
 
-Credentials are read from environment variables. You need at least one provider.
+Set credentials via environment variables. You need at least one provider.
 
 Copy `.env.example` to `.env` and fill in your credentials:
 
@@ -346,14 +323,7 @@ The default `VoteThreshold` strategy converges when:
 
 ### Cost per Round
 
-| Models (N) | Calls per round | Formula |
-|------------|----------------|---------|
-| 2 | 6 | N² + N |
-| 3 | 12 | N² + N |
-| 5 | 30 | N² + N |
-| 7 | 56 | N² + N |
-
-Use `--dry-run` to estimate before running.
+Each round makes N² + N API calls (e.g., 3 models = 12 calls). Use `--dry-run` to estimate.
 
 ## Contributing
 
