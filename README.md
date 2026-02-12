@@ -9,7 +9,7 @@ Iteratively reach consensus across multiple AI models
 ### As a CLI
 
 ```sh
-cargo install converge-cli
+cargo install converge_cli
 ```
 
 Requires [Rust](https://www.rust-lang.org/tools/install) 1.85+.
@@ -53,7 +53,7 @@ Available models:
 | `codex` | OpenAI | codex |
 | `gemini-2.5-pro` | Google | gemini-2.5-pro |
 
-Short aliases: `claude` = `claude-sonnet`, `gemini` = `gemini-2.5-pro`.
+Short aliases: `claude` = `claude-sonnet`, `gemini` = `gemini-2.5-pro`. Any `claude-*` value (e.g., `claude-haiku`) is passed through to Anthropic.
 
 ### Options
 
@@ -94,6 +94,7 @@ converge "prompt" --models claude,codex --output-format json
   "status": "converged",
   "winner": { "model_id": "claude-sonnet", "answer": "..." },
   "final_round": 2,
+  "strategy": "vote-threshold",
   "all_answers": [{ "model_id": "...", "answer": "...", "mean_score": 9.5 }],
   "metadata": { "total_rounds": 2, "total_calls": 12, "elapsed_ms": 45000 }
 }
@@ -151,6 +152,7 @@ let config = EngineConfig::new(
     0,    // max_concurrent (0 = unlimited)
 )?;
 
+let providers = vec![/* your Arc<dyn ModelProvider> instances */];
 let strategy = Box::new(VoteThreshold::new(8.0, 2));
 let engine = Engine::new(providers, strategy, config);
 
