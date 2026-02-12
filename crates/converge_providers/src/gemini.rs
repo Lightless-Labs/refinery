@@ -33,7 +33,7 @@ impl GeminiProvider {
         let binary_path = process::resolve_binary("gemini").await?;
 
         Ok(Self {
-            model_id: ModelId::new(format!("gemini-{model_name}")),
+            model_id: ModelId::new(model_name),
             binary_path,
             credential,
             model_name: model_name.to_string(),

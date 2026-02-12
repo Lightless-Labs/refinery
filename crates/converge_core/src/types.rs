@@ -273,6 +273,9 @@ impl EngineConfig {
     #[must_use]
     pub fn estimate_calls_per_round(&self) -> u32 {
         let n = u32::try_from(self.models.len()).expect("model count fits in u32");
+        if n == 1 {
+            return 1; // single-model short-circuit: 1 PROPOSE call, no loop
+        }
         // N (propose) + N*(N-1) (evaluate) + N (refine) = N² + N
         n * n + n
     }
@@ -392,6 +395,13 @@ mod tests {
         // N=7: 7² + 7 = 56
         let config = EngineConfig::new(models(7), 5, 8.0, 2, Duration::from_secs(120), 10).unwrap();
         assert_eq!(config.estimate_calls_per_round(), 56);
+    }
+
+    #[test]
+    fn estimate_calls_single_model_is_one() {
+        let models = vec![ModelId::new("solo")];
+        let config = EngineConfig::new(models, 5, 8.0, 2, Duration::from_secs(120), 10).unwrap();
+        assert_eq!(config.estimate_calls_per_round(), 1);
     }
 
     #[test]

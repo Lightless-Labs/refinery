@@ -36,7 +36,7 @@ struct Cli {
     #[arg(long, default_value = "120")]
     timeout: u64,
 
-    /// Max concurrent subprocess calls [default: auto] (range: 1-50)
+    /// Max concurrent subprocess calls [default: 0 = unlimited] (range: 0-50)
     #[arg(long, default_value = "0")]
     max_concurrent: usize,
 
@@ -212,8 +212,12 @@ async fn main() -> ExitCode {
         Ok(outcome) => {
             match cli.output_format {
                 OutputFormat::Json => {
+                    let status_str = match serde_json::to_value(&outcome.status) {
+                        Ok(serde_json::Value::String(s)) => s,
+                        _ => format!("{:?}", outcome.status).to_lowercase(),
+                    };
                     let json_output = JsonOutput {
-                        status: format!("{:?}", outcome.status).to_lowercase(),
+                        status: status_str,
                         winner: WinnerOutput {
                             model_id: outcome.winner.as_str().to_string(),
                             answer: outcome.answer.clone(),
@@ -299,7 +303,7 @@ async fn build_provider(
             Ok(Arc::new(provider))
         }
         m if m.starts_with("gemini") => {
-            let model_name = m.strip_prefix("gemini-").unwrap_or("gemini-2.5-pro");
+            let model_name = if m == "gemini" { "gemini-2.5-pro" } else { m };
             let provider =
                 converge_providers::gemini::GeminiProvider::new(model_name, timeout).await?;
             Ok(Arc::new(provider))

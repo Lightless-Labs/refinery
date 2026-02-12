@@ -52,7 +52,16 @@ impl Engine {
         let mut session = self.start(prompt).await?;
 
         loop {
-            let outcome = session.next_round().await?;
+            let outcome = match session.next_round().await {
+                Ok(o) => o,
+                Err(ConvergeError::InsufficientModels { round, .. }) if round > 1 => {
+                    // Graceful degradation: return best-so-far from prior rounds
+                    return Ok(
+                        session.finalize_with_status(ConvergenceStatus::InsufficientModels),
+                    );
+                }
+                Err(e) => return Err(e),
+            };
             if matches!(outcome.closing_decision, ClosingDecision::Converged { .. }) {
                 return Ok(session.finalize());
             }
@@ -199,7 +208,13 @@ impl Session<'_> {
             });
         }
 
-        let semaphore = Arc::new(Semaphore::new(self.config.max_concurrent.max(1)));
+        let permits = if self.config.max_concurrent == 0 {
+            // 0 = unlimited: allow all tasks to run concurrently
+            active_providers.len().pow(2).max(1)
+        } else {
+            self.config.max_concurrent
+        };
+        let semaphore = Arc::new(Semaphore::new(permits));
 
         let additional_context = overrides.additional_context.as_deref();
 
@@ -375,7 +390,7 @@ impl Session<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{AlwaysConvergeAfterN, EchoProvider, FailingProvider};
+    use crate::testing::{AlwaysConvergeAfterN, EchoProvider, FailAfterNProvider, FailingProvider};
 
     fn make_providers(names: &[&str]) -> Vec<Arc<dyn ModelProvider>> {
         names
@@ -468,6 +483,33 @@ mod tests {
             result.unwrap_err(),
             ConvergeError::InsufficientModels { .. }
         ));
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn insufficient_models_returns_best_so_far() {
+        // 3 providers: model_a and model_b succeed round 1, model_c fails.
+        // In round 2, model_b also fails → only 1 proposal → InsufficientModels.
+        // Engine::run should return best-so-far, not an error.
+        let providers: Vec<Arc<dyn ModelProvider>> = vec![
+            Arc::new(EchoProvider::with_json_eval("model_a", 9)),
+            Arc::new(FailAfterNProvider::new("model_b", 1)),
+            Arc::new(FailingProvider::new("model_c")),
+        ];
+        let models = vec![
+            ModelId::new("model_a"),
+            ModelId::new("model_b"),
+            ModelId::new("model_c"),
+        ];
+        let config =
+            EngineConfig::new(models, 5, 8.0, 2, std::time::Duration::from_secs(120), 10).unwrap();
+        let strategy = Box::new(crate::strategy::VoteThreshold::new(8.0, 2));
+        let engine = Engine::new(providers, strategy, config);
+
+        let result = engine.run("test prompt").await;
+        // Should succeed with best-so-far, not error
+        assert!(result.is_ok());
+        let outcome = result.unwrap();
+        assert_eq!(outcome.status, ConvergenceStatus::InsufficientModels);
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
