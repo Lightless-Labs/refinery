@@ -70,28 +70,41 @@ impl ModelProvider for GeminiProvider {
         let args = self.build_args(&user_prompt);
         let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
 
-        // Gemini uses env var for system prompt (no --system-prompt flag).
+        // GEMINI_SYSTEM_MD expects a file path, not inline content — write to temp file.
+        let tmp_path = std::env::temp_dir()
+            .join(format!("refinery-gemini-{}.md", std::process::id()));
+        std::fs::write(&tmp_path, system_prompt.as_bytes()).map_err(|e| {
+            ProviderError::ProcessFailed {
+                model: self.model_id.clone(),
+                message: format!("failed to write system prompt temp file: {e}"),
+                exit_code: None,
+            }
+        })?;
+        let tmp_path_str = tmp_path.to_string_lossy().into_owned();
+
         // Always pass HOME so the CLI can find gcloud/stored credentials.
         let home = std::env::var("HOME").ok();
         let mut env_vars: Vec<(&str, &str)> = Vec::new();
         if let Some(ref cred) = self.credential {
             env_vars.push(cred.as_env_pair());
         }
-        env_vars.push(("GEMINI_SYSTEM_MD", system_prompt.as_str()));
+        env_vars.push(("GEMINI_SYSTEM_MD", &tmp_path_str));
         if let Some(ref h) = home {
             env_vars.push(("HOME", h.as_str()));
         }
 
-        let output = process::spawn_cli(
+        let result = process::spawn_cli(
             &self.binary_path,
             &args_refs,
             &env_vars,
             self.timeout,
             &self.model_id,
         )
-        .await?;
+        .await;
 
-        process::extract_gemini_response(&output)
+        let _ = std::fs::remove_file(&tmp_path);
+
+        process::extract_gemini_response(&result?)
     }
 
     fn model_id(&self) -> &ModelId {
