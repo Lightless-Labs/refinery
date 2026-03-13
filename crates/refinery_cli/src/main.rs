@@ -11,6 +11,7 @@ use tracing::info;
 
 use refinery_core::types::{ConvergenceStatus, ModelId, RoundOutcome};
 use refinery_core::{EngineConfig, ModelProvider};
+use tundish_core::progress::ProgressFn as TundishProgressFn;
 
 /// Iterative multi-model consensus engine.
 ///
@@ -272,9 +273,22 @@ async fn main() -> ExitCode {
         None
     };
 
-    let progress: Option<refinery_core::ProgressFn> = if tick_handle.is_some() {
+    let consensus_progress: Option<refinery_core::ProgressFn> = if tick_handle.is_some() {
         let state = spinner_state.clone();
         Some(Arc::new(move |event| render_progress(event, &state)))
+    } else {
+        None
+    };
+
+    let tundish_progress: Option<TundishProgressFn> = if tick_handle.is_some() {
+        let state = spinner_state.clone();
+        Some(Arc::new(move |model: &ModelId, lines: usize, _elapsed: std::time::Duration| {
+            let mut s = state.lock().unwrap();
+            if s.label.is_none() {
+                s.started = std::time::Instant::now();
+            }
+            s.label = Some(format!("{model} — {lines} lines"));
+        }))
     } else {
         None
     };
@@ -282,7 +296,7 @@ async fn main() -> ExitCode {
     let mut providers: Vec<Arc<dyn ModelProvider>> = Vec::new();
 
     for model in &cli.models {
-        match build_provider(model, &cli.allow_tools, timeout, idle_timeout, progress.clone()).await {
+        match tundish_providers::build_provider(model, &cli.allow_tools, timeout, idle_timeout, tundish_progress.clone()).await {
             Ok(p) => providers.push(p),
             Err(e) => {
                 eprintln!("Failed to initialize provider '{model}': {e}");
@@ -292,7 +306,7 @@ async fn main() -> ExitCode {
     }
 
     let strategy = Box::new(refinery_core::VoteThreshold::new(cli.threshold, 2));
-    let engine = refinery_core::Engine::new(providers, strategy, config, progress.clone());
+    let engine = refinery_core::Engine::new(providers, strategy, config, consensus_progress);
 
     info!("Starting consensus run with {} models", cli.models.len());
 
@@ -451,62 +465,6 @@ fn read_and_validate_files(
     Ok(files)
 }
 
-async fn build_provider(
-    model: &str,
-    allowed_tools: &[String],
-    max_timeout: Duration,
-    idle_timeout: Duration,
-    progress: Option<refinery_core::ProgressFn>,
-) -> Result<Arc<dyn ModelProvider>, Box<dyn std::error::Error>> {
-    match model {
-        m if m.starts_with("claude") => {
-            let model_name = m.strip_prefix("claude-").unwrap_or("opus-4-6");
-            let provider = refinery_providers::claude::ClaudeProvider::new(
-                model_name,
-                allowed_tools,
-                max_timeout,
-                idle_timeout,
-                progress,
-            )
-            .await?;
-            Ok(Arc::new(provider))
-        }
-        m if m == "codex" || m.starts_with("codex-") => {
-            let model_name = m.strip_prefix("codex-").unwrap_or("gpt-5.4");
-            let provider = refinery_providers::codex::CodexProvider::new(
-                model_name,
-                "xhigh",
-                allowed_tools,
-                max_timeout,
-                idle_timeout,
-                progress,
-            )
-            .await?;
-            Ok(Arc::new(provider))
-        }
-        m if m.starts_with("gemini") => {
-            let model_name = if m == "gemini" {
-                "gemini-3.1-pro-preview"
-            } else {
-                m
-            };
-            let provider = refinery_providers::gemini::GeminiProvider::new(
-                model_name,
-                allowed_tools,
-                max_timeout,
-                idle_timeout,
-                progress,
-            )
-            .await?;
-            Ok(Arc::new(provider))
-        }
-        _ => Err(format!(
-            "Unknown model: {model}. Supported: claude[-model], codex, gemini[-model]"
-        )
-        .into()),
-    }
-}
-
 fn save_round_artifacts(
     base_dir: &std::path::Path,
     rounds: &[RoundOutcome],
@@ -588,16 +546,6 @@ fn render_progress(event: refinery_core::ProgressEvent, state: &Mutex<SpinnerSta
             s.label = None;
             eprint!("\r\x1b[2K");
             eprintln!("  ── {phase} ──");
-        }
-        ProgressEvent::SubprocessOutput {
-            model,
-            lines,
-            ..
-        } => {
-            if s.label.is_none() {
-                s.started = std::time::Instant::now();
-            }
-            s.label = Some(format!("{model} — {lines} lines"));
         }
         ProgressEvent::ModelProposed {
             model,

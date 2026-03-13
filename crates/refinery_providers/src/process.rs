@@ -157,13 +157,8 @@ pub async fn spawn_cli(
                 Ok(Ok(_)) => {
                     line_count += 1;
                     debug!(model = %model_clone, line = %line_buf.trim_end(), "stream event");
-                    if let Some(ref cb) = progress {
-                        cb(ProgressEvent::SubprocessOutput {
-                            model: model_clone.clone(),
-                            lines: line_count,
-                            elapsed: start.elapsed(),
-                        });
-                    }
+                    // Progress reporting removed — now handled by tundish_providers
+                    let _ = &progress;
                     collected.push_str(&line_buf);
                     if collected.len() > MAX_RESPONSE_SIZE {
                         return Err(ProviderError::ResponseTooLarge {
