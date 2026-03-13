@@ -174,6 +174,9 @@ pub fn extract_prompts(messages: &[Message]) -> (String, String) {
 /// Extract the response text from a Codex JSONL event stream.
 ///
 /// Parses all JSONL lines and finds the last `turn.completed` event.
+/// With `--output-schema`, Codex validates the final response and emits
+/// `{"type":"turn.completed","text":"{\"answer\":\"...\"}"}`, so we parse
+/// the `text` field as JSON and extract `answer`.
 pub fn extract_codex_response(jsonl: &str) -> Result<String, ProviderError> {
     let model = ModelId::new("codex");
 
@@ -185,6 +188,13 @@ pub fn extract_codex_response(jsonl: &str) -> Result<String, ProviderError> {
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line) {
             if parsed.get("type").and_then(|t| t.as_str()) == Some("turn.completed") {
                 if let Some(text) = parsed.get("text").and_then(|t| t.as_str()) {
+                    // text is `{"answer":"..."}` when --output-schema is used
+                    if let Ok(inner) = serde_json::from_str::<serde_json::Value>(text) {
+                        if let Some(answer) = inner.get("answer").and_then(|a| a.as_str()) {
+                            return Ok(answer.to_string());
+                        }
+                    }
+                    // fallback: plain text (no schema)
                     return Ok(text.to_string());
                 }
             }
@@ -282,9 +292,17 @@ mod tests {
         let jsonl = r#"{"type":"thread.started","thread_id":"t1"}
 {"type":"turn.started","turn_id":"u1"}
 {"type":"item.text_delta","content":"partial"}
-{"type":"turn.completed","turn_id":"u1","text":"Full response text","usage":{"input_tokens":100,"output_tokens":200}}"#;
+{"type":"turn.completed","turn_id":"u1","text":"{\"answer\":\"Full response text\"}","usage":{"input_tokens":100,"output_tokens":200}}"#;
         let result = extract_codex_response(jsonl).unwrap();
         assert_eq!(result, "Full response text");
+    }
+
+    #[test]
+    fn extract_codex_plain_text_fallback() {
+        // When --output-schema is not used, text is plain (not JSON)
+        let jsonl = r#"{"type":"turn.completed","turn_id":"u1","text":"Plain text response"}"#;
+        let result = extract_codex_response(jsonl).unwrap();
+        assert_eq!(result, "Plain text response");
     }
 
     #[test]
