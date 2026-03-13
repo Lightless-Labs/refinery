@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/refinery_core", "crates/refinery_providers", "crates/refinery_cli", "crates/tundish_core", "crates/tundish_providers", "crates/tundish_cli"]
+members = ["crates/refinery_core", "crates/refinery_cli", "crates/tundish_core", "crates/tundish_providers", "crates/tundish_cli"]
 
 [workspace.package]
 version = "0.1.0"
@@ -10,7 +10,6 @@ license = "MIT"
 
 [workspace.dependencies]
 refinery_core = { path = "crates/refinery_core", version = "0.1.0" }
-refinery_providers = { path = "crates/refinery_providers", version = "0.1.0" }
 tundish_core = { path = "crates/tundish_core", version = "0.1.0" }
 tundish_providers = { path = "crates/tundish_providers", version = "0.1.0" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "sync", "time", "io-util"] }
