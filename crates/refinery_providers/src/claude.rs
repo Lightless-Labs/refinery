@@ -25,6 +25,7 @@ pub struct ClaudeProvider {
     binary_path: PathBuf,
     credential: Option<Credential>,
     model_name: String,
+    allowed_tools: Vec<String>,
     max_timeout: Duration,
     idle_timeout: Duration,
     progress: Option<ProgressFn>,
@@ -46,6 +47,7 @@ impl ClaudeProvider {
     /// stored authentication (e.g. `~/.claude.json`).
     pub async fn new(
         model_name: &str,
+        allowed_tools: Vec<String>,
         max_timeout: Duration,
         idle_timeout: Duration,
         progress: Option<ProgressFn>,
@@ -62,6 +64,7 @@ impl ClaudeProvider {
             binary_path,
             credential,
             model_name: model_name.to_string(),
+            allowed_tools,
             max_timeout,
             idle_timeout,
             progress,
@@ -69,7 +72,7 @@ impl ClaudeProvider {
     }
 
     fn build_args(&self, system_prompt: &str, user_prompt: &str) -> Vec<String> {
-        vec![
+        let mut args = vec![
             "-p".to_string(),
             "--verbose".to_string(), // required for stream-json in print mode
             "--output-format".to_string(),
@@ -83,11 +86,18 @@ impl ClaudeProvider {
             "high".to_string(),
             "--model".to_string(),
             format!("claude-{}", self.model_name),
-            "--append-system-prompt".to_string(),
-            system_prompt.to_string(),
-            "--".to_string(),
-            user_prompt.to_string(),
-        ]
+        ];
+
+        if !self.allowed_tools.is_empty() {
+            args.push("--allowedTools".to_string());
+            args.push(self.allowed_tools.join(","));
+        }
+
+        args.push("--append-system-prompt".to_string());
+        args.push(system_prompt.to_string());
+        args.push("--".to_string());
+        args.push(user_prompt.to_string());
+        args
     }
 }
 
@@ -148,6 +158,7 @@ mod tests {
             binary_path: PathBuf::from("/usr/local/bin/claude"),
             credential: Some(test_credential()),
             model_name: "opus-4-6".to_string(),
+            allowed_tools: vec![],
             max_timeout: Duration::from_secs(1800),
             idle_timeout: Duration::from_secs(120),
             progress: None,
@@ -166,5 +177,26 @@ mod tests {
         assert!(args.contains(&"50".to_string()));
         assert!(args.contains(&"--".to_string())); // sentinel
         assert!(args.contains(&"user prompt".to_string()));
+        // No --allowedTools when list is empty
+        assert!(!args.contains(&"--allowedTools".to_string()));
+    }
+
+    #[test]
+    fn build_args_includes_allowed_tools() {
+        let provider = ClaudeProvider {
+            model_id: ModelId::new("claude-opus-4-6"),
+            binary_path: PathBuf::from("/usr/local/bin/claude"),
+            credential: Some(test_credential()),
+            model_name: "opus-4-6".to_string(),
+            allowed_tools: vec!["WebFetch".to_string(), "Read".to_string()],
+            max_timeout: Duration::from_secs(1800),
+            idle_timeout: Duration::from_secs(120),
+            progress: None,
+        };
+
+        let args = provider.build_args("system prompt", "user prompt");
+
+        assert!(args.contains(&"--allowedTools".to_string()));
+        assert!(args.contains(&"WebFetch,Read".to_string()));
     }
 }
