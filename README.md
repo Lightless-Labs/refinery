@@ -9,7 +9,7 @@ Iteratively reach consensus across multiple AI models
 ### As a CLI
 
 ```sh
-cargo install converge_cli
+cargo install --path crates/converge_cli
 ```
 
 Requires [Rust](https://www.rust-lang.org/tools/install) 1.85+.
@@ -46,14 +46,13 @@ converge "your prompt" --models claude,gemini
 
 Available models:
 
-| Alias | Provider | Model |
-|-------|----------|-------|
-| `claude-opus-4-6` | Anthropic | claude-opus-4-6 (effort: high) |
-| `claude-sonnet` | Anthropic | claude-sonnet |
-| `codex` | OpenAI | gpt-5.4 (reasoning: xhigh) |
-| `gemini-3.1-pro-preview` | Google | gemini-3.1-pro-preview |
+| Alias | Resolves to |
+|-------|-------------|
+| `claude` | claude-opus-4-6, effort: high |
+| `codex` | gpt-5.4, reasoning: xhigh |
+| `gemini` | gemini-3.1-pro-preview |
 
-Short aliases: `claude` = `claude-opus-4-6`, `gemini` = `gemini-3.1-pro-preview`. Any `claude-*` value (e.g., `claude-sonnet`) is passed through to Anthropic. Any `codex-*` value (e.g., `codex-o3`) overrides the model.
+Any `claude-*` value (e.g., `claude-sonnet`) is passed through to Anthropic. Any `codex-*` value (e.g., `codex-o3`) overrides the underlying model.
 
 ### Options
 
