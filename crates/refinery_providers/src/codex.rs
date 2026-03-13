@@ -11,7 +11,7 @@ use crate::process;
 
 /// Codex CLI provider adapter.
 ///
-/// Invokes: `codex exec --json --sandbox read-only -m gpt-5.4 -c model_reasoning_effort="xhigh" -- "PROMPT"`
+/// Invokes: `codex exec --json --sandbox read-only --output-schema <file> -m gpt-5.4 -c model_reasoning_effort="xhigh" -- "PROMPT"`
 /// System prompt via: `--config developer_instructions="..."`
 ///
 /// Supports: `OPENAI_API_KEY` (pay-per-use) or `CODEX_API_KEY` (for `codex exec`).
@@ -51,12 +51,14 @@ impl CodexProvider {
         })
     }
 
-    fn build_args(&self, system_prompt: &str, user_prompt: &str) -> Vec<String> {
+    fn build_args(&self, system_prompt: &str, user_prompt: &str, schema_path: &str) -> Vec<String> {
         vec![
             "exec".to_string(),
             "--json".to_string(),
             "--sandbox".to_string(),
             "read-only".to_string(),
+            "--output-schema".to_string(),
+            schema_path.to_string(),
             "--model".to_string(),
             self.model_name.clone(),
             "--config".to_string(),
@@ -74,7 +76,19 @@ impl ModelProvider for CodexProvider {
     async fn send_message(&self, messages: &[Message]) -> Result<String, ProviderError> {
         let (system_prompt, user_prompt) = process::extract_prompts(messages);
 
-        let args = self.build_args(&system_prompt, &user_prompt);
+        // --output-schema expects a file path — write schema to temp file.
+        let schema_path =
+            std::env::temp_dir().join(format!("refinery-codex-schema-{}.json", std::process::id()));
+        let schema =
+            r#"{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}"#;
+        std::fs::write(&schema_path, schema).map_err(|e| ProviderError::ProcessFailed {
+            model: self.model_id.clone(),
+            message: format!("failed to write schema temp file: {e}"),
+            exit_code: None,
+        })?;
+        let schema_path_str = schema_path.to_string_lossy().into_owned();
+
+        let args = self.build_args(&system_prompt, &user_prompt, &schema_path_str);
         let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
 
         let home = std::env::var("HOME").ok();
@@ -86,17 +100,19 @@ impl ModelProvider for CodexProvider {
             env_vars.push(("HOME", h.as_str()));
         }
 
-        let output = process::spawn_cli(
+        let result = process::spawn_cli(
             &self.binary_path,
             &args_refs,
             &env_vars,
             self.timeout,
             &self.model_id,
         )
-        .await?;
+        .await;
 
-        // Codex outputs JSONL; extract from turn.completed
-        process::extract_codex_response(&output)
+        let _ = std::fs::remove_file(&schema_path);
+
+        // Codex outputs JSONL; extract answer from turn.completed
+        process::extract_codex_response(&result?)
     }
 
     fn model_id(&self) -> &ModelId {
@@ -126,12 +142,14 @@ mod tests {
             timeout: Duration::from_secs(120),
         };
 
-        let args = provider.build_args("system prompt", "user prompt");
+        let args = provider.build_args("system prompt", "user prompt", "/tmp/schema.json");
 
         assert!(args.contains(&"exec".to_string()));
         assert!(args.contains(&"--json".to_string()));
         assert!(args.contains(&"--sandbox".to_string()));
         assert!(args.contains(&"read-only".to_string()));
+        assert!(args.contains(&"--output-schema".to_string()));
+        assert!(args.contains(&"/tmp/schema.json".to_string()));
         assert!(args.contains(&"--".to_string())); // sentinel
         assert!(args.contains(&"user prompt".to_string()));
     }
