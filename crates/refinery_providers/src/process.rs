@@ -59,6 +59,11 @@ pub async fn spawn_cli(
     let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/usr/local/bin:/bin".to_string());
     cmd.env("PATH", path);
 
+    // Inherit TMPDIR — required by many CLIs on macOS for temp file creation
+    if let Ok(tmpdir) = std::env::var("TMPDIR") {
+        cmd.env("TMPDIR", tmpdir);
+    }
+
     // Inject provider-specific env vars
     for (key, value) in env_vars {
         cmd.env(key, value);
@@ -87,15 +92,19 @@ pub async fn spawn_cli(
             let stderr = String::from_utf8_lossy(&output.stderr);
 
             if !output.status.success() {
+                // Some CLIs (e.g. claude) print errors to stdout rather than stderr.
+                // Prefer stderr; fall back to stdout so the error is never silently swallowed.
+                let message = if stderr.is_empty() { stdout.as_str() } else { stderr.as_ref() };
                 warn!(
                     model = %model,
                     exit_code = ?output.status.code(),
                     stderr = %stderr,
+                    stdout = %stdout,
                     "CLI process failed"
                 );
                 return Err(ProviderError::ProcessFailed {
                     model: model.clone(),
-                    message: stderr.to_string(),
+                    message: message.to_string(),
                     exit_code: output.status.code(),
                 });
             }
