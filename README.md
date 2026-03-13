@@ -29,55 +29,61 @@ Set up credentials for at least one provider (see [Credentials](#credentials))
 
 ```sh
 refinery "What are the three most impactful breakthroughs in physics?" \
-  --models claude,codex,gemini
+  --models claude-code,codex-cli,gemini-cli
 ```
 
-Models propose, review, refine, and repeat until consensus.
+Models propose, evaluate each other, and repeat until consensus.
 
 ## CLI Usage
 
 ### Models
 
-Pass models as a comma-separated list
+Pass models as a comma-separated list using `provider/model` format
 
 ```sh
-refinery "your prompt" --models claude,gemini
+refinery "your prompt" --models claude-code/claude-opus-4-6,gemini-cli/gemini-3.1-pro-preview
 ```
 
-Available models:
+Short aliases use each provider's default model
 
-| Alias | Resolves to |
-|-------|-------------|
-| `claude` | claude-opus-4-6, effort: high |
-| `codex` | gpt-5.4, reasoning: xhigh |
-| `gemini` | gemini-3.1-pro-preview |
+```sh
+refinery "your prompt" --models claude-code,codex-cli,gemini-cli
+```
 
-Any `claude-*` value (e.g., `claude-sonnet`) is passed through to Anthropic. Any `codex-*` value (e.g., `codex-o3`) overrides the underlying model.
+Available providers and defaults:
+
+| Provider | Default model | Binary |
+|----------|---------------|--------|
+| `claude-code` | claude-opus-4-6 | `claude` |
+| `codex-cli` | gpt-5.4 | `codex` |
+| `gemini-cli` | gemini-3.1-pro-preview | `gemini` |
+
+Override the model with `provider/model` syntax (e.g., `claude-code/claude-sonnet-4-6`, `codex-cli/o3-pro`).
 
 ### Options
 
 Set the convergence threshold
 
 ```sh
-refinery "prompt" --models claude,codex --threshold 9.0
+refinery "prompt" --models claude-code,codex-cli --threshold 9.0
 ```
 
 Limit the number of rounds
 
 ```sh
-refinery "prompt" --models claude,codex --max-rounds 3
+refinery "prompt" --models claude-code,codex-cli --max-rounds 3
 ```
 
 Set per-call timeout (seconds)
 
 ```sh
-refinery "prompt" --models claude,codex --timeout 180
+refinery "prompt" --models claude-code,codex-cli --timeout 180
 ```
 
 Limit concurrent API calls
 
 ```sh
-refinery "prompt" --models claude,codex --max-concurrent 4
+refinery "prompt" --models claude-code,codex-cli --max-concurrent 4
 ```
 
 ### Output Formats
@@ -85,13 +91,13 @@ refinery "prompt" --models claude,codex --max-concurrent 4
 Output is plain text by default. Get JSON for programmatic use
 
 ```sh
-refinery "prompt" --models claude,codex --output-format json
+refinery "prompt" --models claude-code,codex-cli --output-format json
 ```
 
 ```json
 {
   "status": "converged",
-  "winner": { "model_id": "claude-opus-4-6", "answer": "..." },
+  "winner": { "model_id": "claude-code/claude-opus-4-6", "answer": "..." },
   "final_round": 2,
   "strategy": "vote-threshold",
   "all_answers": [{ "model_id": "...", "answer": "...", "mean_score": 9.5 }],
@@ -104,7 +110,7 @@ refinery "prompt" --models claude,codex --output-format json
 Estimate API call count without running
 
 ```sh
-refinery "prompt" --models claude,codex,gemini --dry-run
+refinery "prompt" --models claude-code,codex-cli,gemini-cli --dry-run
 ```
 
 ### File Input
@@ -113,13 +119,13 @@ Pass one or more files with `-f`/`--file` (repeatable, 1 MB total)
 
 ```sh
 # Files as the subject — no text prompt needed
-refinery --file src/auth.rs --file src/crypto.rs --models claude,codex,gemini
+refinery --file src/auth.rs --file src/crypto.rs --models claude-code,codex-cli,gemini-cli
 
 # Files with an instruction prompt
-refinery "review these for security issues" --file src/auth.rs --file src/lib.rs --models claude,codex
+refinery "review these for security issues" --file src/auth.rs --file src/lib.rs --models claude-code,codex-cli
 
 # Combine stdin instruction with a file
-echo "what does this do?" | refinery - --file src/main.rs --models claude,gemini
+echo "what does this do?" | refinery - --file src/main.rs --models claude-code,gemini-cli
 ```
 
 File contents are wrapped in nonce-tagged blocks (`<file-{nonce} path="...">`) so models know which content came from where. Non-UTF-8 files and files exceeding the 1 MB budget are rejected with a clear error before any API calls are made.
@@ -129,14 +135,14 @@ File contents are wrapped in nonce-tagged blocks (`<file-{nonce} path="...">`) s
 Pipe a prompt from another command (max 1 MB)
 
 ```sh
-cat question.txt | refinery - --models claude,codex
+cat question.txt | refinery - --models claude-code,codex-cli
 ```
 
 ### Verbose and Debug
 
 ```sh
-refinery "prompt" --models claude,codex --verbose  # per-round progress
-refinery "prompt" --models claude,codex --debug    # raw CLI invocations
+refinery "prompt" --models claude-code,codex-cli --verbose  # per-round progress
+refinery "prompt" --models claude-code,codex-cli --debug    # raw CLI invocations
 ```
 
 ### Exit Codes
@@ -160,7 +166,7 @@ use std::time::Duration;
 use refinery_core::{Engine, EngineConfig, ModelId, VoteThreshold};
 
 let config = EngineConfig::new(
-    vec![ModelId::new("model-a"), ModelId::new("model-b")],
+    vec![ModelId::new("provider-a/model-a"), ModelId::new("provider-b/model-b")],
     5,    // max_rounds
     8.0,  // threshold
     2,    // stability_rounds
@@ -324,12 +330,11 @@ Coming soon — for accessing Gemini via Vertex AI.
 
 ## How It Works
 
-ConVerge runs a 4-phase loop until convergence or max rounds:
+ConVerge runs a 3-phase loop until convergence or max rounds:
 
-1. **Propose** — each model independently answers the prompt
+1. **Propose** — each model independently answers the prompt (round 2+ includes prior scores and peer answers as context)
 2. **Evaluate** — each model reviews and scores every other model's answer (1–10)
-3. **Refine** — each model improves its answer based on peer feedback
-4. **Close** — check if the top-scoring model meets the threshold and has been stable
+3. **Close** — check if the top-scoring model meets the threshold and has been stable
 
 Models are anonymized during evaluation (shuffled labels A, B, C…) to reduce bias. Self-scores are excluded.
 
@@ -341,7 +346,7 @@ The default `VoteThreshold` strategy converges when:
 
 ### Cost per Round
 
-Each round makes N² + N API calls (e.g., 3 models = 12 calls). Use `--dry-run` to estimate.
+Each round makes N(N-1) + N = N² API calls (e.g., 3 models = 9 calls). Use `--dry-run` to estimate.
 
 ## Contributing
 
