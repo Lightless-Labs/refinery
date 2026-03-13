@@ -249,7 +249,8 @@ async fn main() -> ExitCode {
         label: None,
         started: std::time::Instant::now(),
         frame: 0,
-        scores: HashMap::new(),
+        current_evals: HashMap::new(),
+        round_scores: Vec::new(),
     }));
 
     let tick_handle = if !cli.verbose && !cli.debug && std::io::stderr().is_terminal() {
@@ -561,8 +562,10 @@ struct SpinnerState {
     started: std::time::Instant,
     /// Frame counter, advanced by the tick task.
     frame: usize,
-    /// Per-model evaluation scores accumulated during the current round.
-    scores: HashMap<String, Vec<f64>>,
+    /// Per-model evaluation scores for the current round (cleared each round).
+    current_evals: HashMap<String, Vec<f64>>,
+    /// Per-round mean scores accumulated across all rounds.
+    round_scores: Vec<HashMap<String, f64>>,
 }
 
 /// Handle a progress event by updating shared spinner state.
@@ -572,11 +575,12 @@ struct SpinnerState {
 #[allow(clippy::too_many_lines)]
 fn render_progress(event: refinery_core::ProgressEvent, state: &Mutex<SpinnerState>) {
     use refinery_core::ProgressEvent;
+    use std::fmt::Write;
     let mut s = state.lock().unwrap();
     match event {
         ProgressEvent::RoundStarted { round, total } => {
             s.label = None;
-            s.scores.clear();
+            s.current_evals.clear();
             eprint!("\r\x1b[2K");
             eprintln!("\n  Round {round}/{total}");
         }
@@ -616,7 +620,7 @@ fn render_progress(event: refinery_core::ProgressEvent, state: &Mutex<SpinnerSta
             preview,
         } => {
             s.label = None;
-            s.scores
+            s.current_evals
                 .entry(reviewee.to_string())
                 .or_default()
                 .push(score);
@@ -666,27 +670,57 @@ fn render_progress(event: refinery_core::ProgressEvent, state: &Mutex<SpinnerSta
                 );
             }
 
-            // Round score summary table
-            if !s.scores.is_empty() {
-                let mut model_scores: Vec<(String, f64)> = s
-                    .scores
-                    .iter()
-                    .map(|(model, scores)| {
-                        #[allow(clippy::cast_precision_loss)] // model count is tiny
-                        let mean = scores.iter().sum::<f64>() / scores.len() as f64;
-                        (model.clone(), mean)
-                    })
-                    .collect();
-                model_scores
-                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            // Finalize current round means into the history
+            if !s.current_evals.is_empty() {
+                let mut means: HashMap<String, f64> = HashMap::new();
+                for (model, scores) in &s.current_evals {
+                    #[allow(clippy::cast_precision_loss)]
+                    let mean = scores.iter().sum::<f64>() / scores.len() as f64;
+                    means.insert(model.clone(), mean);
+                }
+                s.round_scores.push(means);
+            }
 
-                let w = model_scores.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
-                for (name, score) in &model_scores {
-                    if winner_name.as_deref() == Some(name.as_str()) {
-                        eprintln!("    \x1b[32m{name:<w$}  {score:>4.1} ★\x1b[0m");
+            // Render progressive score table across all rounds
+            if !s.round_scores.is_empty() {
+                // Collect all models, sorted by latest round score desc
+                let latest = s.round_scores.last().unwrap();
+                let mut models: Vec<&String> = latest.keys().collect();
+                models.sort_by(|a, b| {
+                    latest
+                        .get(*b)
+                        .partial_cmp(&latest.get(*a))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+
+                let name_w = models.iter().map(|n| n.len()).max().unwrap_or(0);
+                let num_rounds = s.round_scores.len();
+
+                // Header row with round numbers
+                let mut header = format!("    {:<name_w$}", "");
+                for r in 1..=num_rounds {
+                    let _ = write!(header, "  R{r:<3}");
+                }
+                eprintln!("\x1b[2m{header}\x1b[0m");
+
+                // One row per model
+                for name in &models {
+                    let is_winner = winner_name.as_deref() == Some(name.as_str());
+                    let mut row = if is_winner {
+                        format!("    \x1b[32m{name:<name_w$}")
                     } else {
-                        eprintln!("    {name:<w$}  {score:>4.1}");
+                        format!("    {name:<name_w$}")
+                    };
+                    for round in &s.round_scores {
+                        match round.get(*name) {
+                            Some(score) => { let _ = write!(row, "  {score:>4.1}"); }
+                            None => row.push_str("     -"),
+                        }
                     }
+                    if is_winner {
+                        row.push_str(" ★\x1b[0m");
+                    }
+                    eprintln!("{row}");
                 }
             }
         }
