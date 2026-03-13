@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/refinery_core", "crates/refinery_providers", "crates/refinery_cli", "crates/tundish_core", "crates/tundish_providers"]
+members = ["crates/refinery_core", "crates/refinery_providers", "crates/refinery_cli", "crates/tundish_core", "crates/tundish_providers", "crates/tundish_cli"]
 
 [workspace.package]
 version = "0.1.0"

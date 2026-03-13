@@ -1,0 +1,20 @@
+[package]
+name = "tundish_cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "tundish"
+path = "src/main.rs"
+
+[dependencies]
+tundish_core = { workspace = true }
+tundish_providers = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true
