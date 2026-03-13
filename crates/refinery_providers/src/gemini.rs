@@ -22,6 +22,7 @@ pub struct GeminiProvider {
     binary_path: PathBuf,
     credential: Option<Credential>,
     model_name: String,
+    allowed_tools: Vec<String>,
     max_timeout: Duration,
     idle_timeout: Duration,
     progress: Option<ProgressFn>,
@@ -43,6 +44,7 @@ impl GeminiProvider {
     /// stored authentication (e.g. gcloud credentials).
     pub async fn new(
         model_name: &str,
+        allowed_tools: Vec<String>,
         max_timeout: Duration,
         idle_timeout: Duration,
         progress: Option<ProgressFn>,
@@ -57,6 +59,7 @@ impl GeminiProvider {
             binary_path,
             credential,
             model_name: model_name.to_string(),
+            allowed_tools,
             max_timeout,
             idle_timeout,
             progress,
@@ -64,17 +67,30 @@ impl GeminiProvider {
     }
 
     fn build_args(&self, user_prompt: &str) -> Vec<String> {
-        vec![
+        let mut args = vec![
             "--output-format".to_string(),
             "json".to_string(),
             "--model".to_string(),
             self.model_name.clone(),
             "--sandbox".to_string(),
-            "--approval-mode".to_string(),
-            "plan".to_string(),
-            "--prompt".to_string(),
-            user_prompt.to_string(),
-        ]
+        ];
+
+        if self.allowed_tools.is_empty() {
+            args.push("--approval-mode".to_string());
+            args.push("plan".to_string());
+        } else {
+            // Auto-approve listed tools; use default approval for the rest
+            args.push("--approval-mode".to_string());
+            args.push("auto_edit".to_string());
+            for tool in &self.allowed_tools {
+                args.push("--allowed-tools".to_string());
+                args.push(tool.clone());
+            }
+        }
+
+        args.push("--prompt".to_string());
+        args.push(user_prompt.to_string());
+        args
     }
 }
 
@@ -152,6 +168,7 @@ mod tests {
             binary_path: PathBuf::from("/usr/local/bin/gemini"),
             credential: Some(test_credential()),
             model_name: "gemini-3.1-pro-preview".to_string(),
+            allowed_tools: vec![],
             max_timeout: Duration::from_secs(1800),
             idle_timeout: Duration::from_secs(120),
             progress: None,
@@ -166,5 +183,26 @@ mod tests {
         assert!(args.contains(&"plan".to_string()));
         assert!(args.contains(&"--prompt".to_string()));
         assert!(args.contains(&"user prompt".to_string()));
+    }
+
+    #[test]
+    fn build_args_with_allowed_tools() {
+        let provider = GeminiProvider {
+            model_id: ModelId::new("gemini-3.1-pro-preview"),
+            binary_path: PathBuf::from("/usr/local/bin/gemini"),
+            credential: Some(test_credential()),
+            model_name: "gemini-3.1-pro-preview".to_string(),
+            allowed_tools: vec!["web_search".to_string()],
+            max_timeout: Duration::from_secs(1800),
+            idle_timeout: Duration::from_secs(120),
+            progress: None,
+        };
+
+        let args = provider.build_args("user prompt");
+
+        assert!(args.contains(&"--allowed-tools".to_string()));
+        assert!(args.contains(&"web_search".to_string()));
+        assert!(args.contains(&"auto_edit".to_string()));
+        assert!(!args.contains(&"plan".to_string()));
     }
 }
