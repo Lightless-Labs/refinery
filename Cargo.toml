@@ -4,7 +4,6 @@ members = [
     "crates/tundish_core",
     "crates/tundish_providers",
     "crates/refinery_core",
-    "crates/refinery_providers",
     "crates/refinery_cli",
 ]
 
@@ -18,7 +17,6 @@ license = "MIT"
 tundish_core = { path = "crates/tundish_core", version = "0.1.0" }
 tundish_providers = { path = "crates/tundish_providers", version = "0.1.0" }
 refinery_core = { path = "crates/refinery_core", version = "0.1.0" }
-refinery_providers = { path = "crates/refinery_providers", version = "0.1.0" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "sync", "time", "io-util"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
