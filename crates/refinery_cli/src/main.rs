@@ -260,7 +260,6 @@ async fn main() -> ExitCode {
     // progress events just update the shared status text.
     let spinner_state = Arc::new(Mutex::new(SpinnerState {
         label: None,
-        started: std::time::Instant::now(),
         frame: 0,
         current_evals: HashMap::new(),
         round_scores: Vec::new(),
@@ -275,8 +274,7 @@ async fn main() -> ExitCode {
                 let mut s = state.lock().unwrap();
                 if let Some(ref label) = s.label {
                     let spin = FRAMES[s.frame % FRAMES.len()];
-                    let elapsed = s.started.elapsed().as_secs();
-                    eprint!("\r\x1b[2K    {spin} {label}, {elapsed}s");
+                    eprint!("\r\x1b[2K    {spin} {label}");
                     s.frame += 1;
                 }
             }
@@ -289,12 +287,12 @@ async fn main() -> ExitCode {
     let tundish_progress: Option<tundish_core::ProgressFn> = if tick_handle.is_some() {
         let state = spinner_state.clone();
         Some(Arc::new(
-            move |model: &ModelId, lines: usize, _elapsed: Duration| {
+            move |model: &ModelId, lines: usize, elapsed: Duration| {
                 let mut s = state.lock().unwrap();
-                if s.label.is_none() {
-                    s.started = std::time::Instant::now();
-                }
-                s.label = Some(format!("{model} — {lines} lines"));
+                s.label = Some(format!(
+                    "{model} — {lines} lines, {}s",
+                    elapsed.as_secs()
+                ));
             },
         ))
     } else {
@@ -638,11 +636,9 @@ fn save_round_artifacts(
 
 /// Shared state between the progress callback and the background spinner tick task.
 struct SpinnerState {
-    /// Current in-progress label, e.g. "claude-opus-4-6 — 42 lines".
-    /// The tick task appends the live elapsed time. None = spinner idle.
+    /// Current in-progress label, e.g. "claude-opus-4-6 — 42 lines, 12s".
+    /// None = spinner idle.
     label: Option<String>,
-    /// When the current subprocess started (for live elapsed timer).
-    started: std::time::Instant,
     /// Frame counter, advanced by the tick task.
     frame: usize,
     /// Per-model evaluation scores for the current round (cleared each round).
