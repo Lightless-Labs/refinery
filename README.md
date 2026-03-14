@@ -159,7 +159,8 @@ refinery "prompt" --models claude-code,codex-cli --debug    # raw CLI invocation
 ## CLI Examples
 
 <details>
-  <summary>### The Hitchhiker's Guide to the Galaxy</summary>
+  <summary>The Hitchhiker's Guide to the Galaxy</summary>
+
   ```
   $ refinery --max-rounds 5 --output-format json --models claude-code,codex-cli,gemini-cli --timeout 1800 --idle-timeout 480 --output-dir out "What's the answer to life, the Universe, and everything?"
   
@@ -234,7 +235,7 @@ refinery "prompt" --models claude-code,codex-cli --debug    # raw CLI invocation
 </details>
 
 <details>
-  <summary>### The Car Wash Test</summary>
+  <summary>The Car Wash Test</summary>
   
   ```
   $ refinery --max-rounds 5 --output-format json --models claude-code,codex-cli,gemini-cli --timeout 1800 --idle-timeout 480 --output-dir out "The car wash is only 100m away from my house, should I walk or drive?" --dry-run
@@ -406,86 +407,6 @@ refinery "prompt" --models claude-code,codex-cli --debug    # raw CLI invocation
     }
   }
   ```
-</details>
-
-
-<details>
-  <summary>### The Car Wash Test</summary>
-  ```
-  $refinery --max-rounds 5 --output-format json --models claude-code,codex-cli,gemini-cli --timeout 1800 --idle-timeout 480 --output-dir out "What's the answer to life, the Universe, and everything?"
-  
-    Round 1/5
-    ── propose ──
-      ✓ codex-cli/gpt-5.4 proposed (1 words) — "42."
-      ✓ gemini-cli/gemini-3.1-pro-preview proposed (56 words) — "The answer to life, the Universe, and everything is **42**, ..."
-      ✓ claude-code/claude-opus-4-6 proposed (72 words) — "42 — the answer computed by the supercomputer Deep Thought i..."
-    ── evaluate ──
-      ✓ gemini-cli/gemini-3.1-pro-preview → codex-cli/gpt-5.4: 8.0 — "The answer correctly identifies the iconic response to the p..."
-      ✓ codex-cli/gpt-5.4 → gemini-cli/gemini-3.1-pro-preview: 9.0 — "This is a strong answer: accurate, clear, and appropriately ..."
-      ✓ claude-code/claude-opus-4-6 → codex-cli/gpt-5.4: 8.0 — "The answer is correct and appropriately succinct. '42' is th..."
-      ✓ gemini-cli/gemini-3.1-pro-preview → claude-code/claude-opus-4-6: 10.0 — "An excellent, comprehensive answer that not only provides th..."
-      ✓ codex-cli/gpt-5.4 → claude-code/claude-opus-4-6: 9.0 — "This is a strong answer: accurate, well-written, and appropr..."
-      ✓ claude-code/claude-opus-4-6 → gemini-cli/gemini-3.1-pro-preview: 8.0 — "This is a solid, accurate, and well-written answer. It corre..."
-    → Not converged (9.5/8.0, stable 1/2)
-                                         R1  
-      claude-code/claude-opus-4-6         9.5 ★
-      gemini-cli/gemini-3.1-pro-preview   8.5
-      codex-cli/gpt-5.4                   8.0
-  
-    Round 2/5
-    ── propose ──
-      ✓ codex-cli/gpt-5.4 proposed (11 words) — "42, according to Douglas Adams' *The Hitchhiker's Guide to t..."
-      ✓ claude-code/claude-opus-4-6 proposed (100 words) — "**42** — the answer computed by the supercomputer Deep Thoug..."
-      ✓ gemini-cli/gemini-3.1-pro-preview proposed (188 words) — "The answer to life, the Universe, and everything is **42**."
-    ── evaluate ──
-      ✓ claude-code/claude-opus-4-6 → codex-cli/gpt-5.4: 8.0 — "This is a correct, well-attributed, and concise answer. It i..."
-      ✓ codex-cli/gpt-5.4 → claude-code/claude-opus-4-6: 9.0 — "This is a strong answer: accurate, well-written, and appropr..."
-      ✓ codex-cli/gpt-5.4 → gemini-cli/gemini-3.1-pro-preview: 9.0 — "This is a strong answer: correct, clear, and engaging. It an..."
-      ✓ gemini-cli/gemini-3.1-pro-preview → codex-cli/gpt-5.4: 10.0 — "The answer perfectly addresses the classic pop-culture trivi..."
-      ✓ claude-code/claude-opus-4-6 → gemini-cli/gemini-3.1-pro-preview: 9.0 — "This is an excellent, accurate, and well-structured answer t..."
-      ✓ gemini-cli/gemini-3.1-pro-preview → claude-code/claude-opus-4-6: 10.0 — "An exceptionally well-crafted response that not only provide..."
-    → Converged! Winner: claude-code/claude-opus-4-6 (9.5 ≥ 8.0, stable 2/2)
-                                         R1    R2  
-      claude-code/claude-opus-4-6         9.5   9.5 ★
-      codex-cli/gpt-5.4                   8.0   9.0
-      gemini-cli/gemini-3.1-pro-preview   8.5   9.0
-  {
-    "status": "converged",
-    "winner": {
-      "model_id": "claude-code/claude-opus-4-6",
-      "answer": "**42** — the answer computed by the supercomputer Deep Thought in Douglas Adams' *The Hitchhiker's Guide to the Galaxy* (1979). Deep Thought took 7.5 million years to arrive at this answer, only to reveal that the real problem was that nobody knew what the actual Question was. A larger computer — the Earth — was then built to find the Question, but was unfortunately demolished by the Vogons five minutes before completing its 10-million-year program.\n\nThe joke, of course, is that a precise answer without a meaningful question is useless — a wry commentary on humanity's search for cosmic meaning."
-    },
-    "final_round": 2,
-    "strategy": "vote-threshold",
-    "all_answers": [
-      {
-        "model_id": "codex-cli/gpt-5.4",
-        "answer": "42, according to Douglas Adams' *The Hitchhiker's Guide to the Galaxy*.",
-        "mean_score": 9.0
-      },
-      {
-        "model_id": "claude-code/claude-opus-4-6",
-        "answer": "**42** — the answer computed by the supercomputer Deep Thought in Douglas Adams' *The Hitchhiker's Guide to the Galaxy* (1979). Deep Thought took 7.5 million years to arrive at this answer, only to reveal that the real problem was that nobody knew what the actual Question was. A larger computer — the Earth — was then built to find the Question, but was unfortunately demolished by the Vogons five minutes before completing its 10-million-year program.\n\nThe joke, of course, is that a precise answer without a meaningful question is useless — a wry commentary on humanity's search for cosmic meaning.",
-        "mean_score": 9.5
-      },
-      {
-        "model_id": "gemini-cli/gemini-3.1-pro-preview",
-        "answer": "The answer to life, the Universe, and everything is **42**.\n\nThis famous answer originates from Douglas Adams' classic science fiction comedy series, *The Hitchhiker's Guide to the Galaxy*. \n\nIn the story, a group of hyper-intelligent, pan-dimensional beings build a massive supercomputer named Deep Thought to calculate the answer to the Ultimate Question of Life, the Universe, and Everything. After pondering the problem for 7.5 million years, Deep Thought finally reveals the answer to be 42.\n\nHowever, the computer points out that the answer is ultimately meaningless to them because the creators never actually knew what the \"Ultimate Question\" was in the first place. To figure out the specific question that yields the answer 42, an even larger and more complex computer is built—a planet called Earth. Tragically, Earth is destroyed by the Vogons to make way for a hyperspace bypass just five minutes before its ten-million-year calculation is set to complete.\n\nSince the series' publication, the number \"42\" has transcended its origins to become a beloved staple of geek culture and science fiction trivia, frequently appearing as an Easter egg in software, video games, and across the internet.",
-        "mean_score": 9.0
-      }
-    ],
-    "metadata": {
-      "total_rounds": 2,
-      "total_calls": 18,
-      "elapsed_ms": 80667,
-      "models_dropped": []
-    }
-  }
-  ```
-</details>
-
-<details>
-  <summary>### The Car Wash Test</summary>
 </details>
 
 ## Library Usage
