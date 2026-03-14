@@ -27,8 +27,12 @@ pub struct ProgressDisplay {
 struct Inner {
     /// Active progress bars, keyed by a display string (model or "reviewer → reviewee").
     bars: HashMap<String, ProgressBar>,
-    /// Finished bars from previous phases — kept alive so indicatif doesn't remove them.
-    finished: Vec<ProgressBar>,
+    /// Finished bars from current round (propose/evaluate results, headers).
+    /// Cleared on new round start.
+    round_bars: Vec<ProgressBar>,
+    /// Score table + convergence status bars. Persist across rounds until
+    /// the next `convergence_check` replaces them.
+    table_bars: Vec<ProgressBar>,
     /// Per-round mean scores accumulated across all rounds.
     round_scores: Vec<HashMap<String, f64>>,
     /// Per-model evaluation scores for the current round.
@@ -49,7 +53,8 @@ impl ProgressDisplay {
         Self {
             inner: Arc::new(Mutex::new(Inner {
                 bars: HashMap::new(),
-                finished: Vec::new(),
+                round_bars: Vec::new(),
+                table_bars: Vec::new(),
                 round_scores: Vec::new(),
                 current_evals: HashMap::new(),
                 current_phase: String::new(),
@@ -61,19 +66,20 @@ impl ProgressDisplay {
     /// New round: clear old bars, print round header.
     pub fn round_started(&self, round: u32, total: u32) {
         let mut inner = self.inner.lock().unwrap();
-        // Remove all bars from previous round from the MultiProgress display
-        for pb in inner.bars.values().chain(inner.finished.iter()) {
+        // Clear round content (propose/evaluate bars + headers) but keep
+        // the score table visible — it persists until next convergence_check.
+        for pb in inner.bars.values().chain(inner.round_bars.iter()) {
             self.multi.remove(pb);
         }
         inner.bars.clear();
-        inner.finished.clear();
+        inner.round_bars.clear();
         inner.current_evals.clear();
 
         // Round header as a finished bar (keeps correct position in indicatif)
         let header = self.multi.add(ProgressBar::new_spinner());
         header.set_style(ProgressStyle::with_template("\n  {msg}").unwrap());
         header.finish_with_message(format!("Round {round}/{total}"));
-        inner.finished.push(header);
+        inner.round_bars.push(header);
     }
 
     /// New phase: finish (but keep visible) any previous bars, print phase header.
@@ -89,7 +95,7 @@ impl ProgressDisplay {
             }
         }
         let prev_bars: Vec<ProgressBar> = inner.bars.drain().map(|(_, pb)| pb).collect();
-        inner.finished.extend(prev_bars);
+        inner.round_bars.extend(prev_bars);
 
         inner.current_phase = phase.to_string();
 
@@ -98,7 +104,7 @@ impl ProgressDisplay {
         let header = self.multi.add(ProgressBar::new_spinner());
         header.set_style(ProgressStyle::with_template("  {msg}").unwrap());
         header.finish_with_message(format!("── {phase} ──"));
-        inner.finished.push(header);
+        inner.round_bars.push(header);
 
         let style = spinner_style();
         if phase == "propose" {
@@ -227,9 +233,15 @@ impl ProgressDisplay {
             }
         }
 
-        // Move evaluate bars to finished
+        // Move evaluate bars to round_bars
         let eval_bars: Vec<ProgressBar> = inner.bars.drain().map(|(_, pb)| pb).collect();
-        inner.finished.extend(eval_bars);
+        inner.round_bars.extend(eval_bars);
+
+        // Clear previous score table bars
+        for pb in &inner.table_bars {
+            self.multi.remove(pb);
+        }
+        inner.table_bars.clear();
 
         let winner_name = winner.map(std::string::ToString::to_string);
 
@@ -243,7 +255,7 @@ impl ProgressDisplay {
         let status_bar = self.multi.add(ProgressBar::new_spinner());
         status_bar.set_style(ProgressStyle::with_template("{msg}").unwrap());
         status_bar.finish_with_message(msg);
-        inner.finished.push(status_bar);
+        inner.table_bars.push(status_bar);
 
         // Finalize current round means into history
         if !inner.current_evals.is_empty() {
@@ -263,7 +275,7 @@ impl ProgressDisplay {
                 let line_bar = self.multi.add(ProgressBar::new_spinner());
                 line_bar.set_style(ProgressStyle::with_template("{msg}").unwrap());
                 line_bar.finish_with_message(line.to_string());
-                inner.finished.push(line_bar);
+                inner.table_bars.push(line_bar);
             }
         }
     }
@@ -271,7 +283,12 @@ impl ProgressDisplay {
     /// Clear all spinners (for final cleanup).
     pub fn finish(&self) {
         let inner = self.inner.lock().unwrap();
-        for pb in inner.bars.values().chain(inner.finished.iter()) {
+        for pb in inner
+            .bars
+            .values()
+            .chain(inner.round_bars.iter())
+            .chain(inner.table_bars.iter())
+        {
             self.multi.remove(pb);
         }
         let _ = self.multi.clear();
