@@ -134,25 +134,30 @@ struct ErrorDetail {
     retryable: bool,
 }
 
-/// Immediate SIGINT handler — terminates the process without going through tokio.
-#[allow(unsafe_code)]
-extern "C" fn sigint_handler(_sig: libc::c_int) {
-    unsafe { libc::_exit(130) }
-}
-
 fn main() -> ExitCode {
-    // Install SIGINT handler before tokio starts.
-    // Combined with stdin(Stdio::null()) on child processes, this ensures:
-    // 1. Children don't steal the foreground process group (no TTY)
-    // 2. SIGINT from Ctrl+C reaches refinery
-    // 3. _exit(130) terminates immediately (no atexit, no tokio)
+    // Block SIGINT on the main thread. All future threads (including tokio workers)
+    // inherit this mask, so no thread will ever run a SIGINT handler.
     #[allow(unsafe_code)]
     unsafe {
-        let mut sa: libc::sigaction = std::mem::zeroed();
-        sa.sa_sigaction = sigint_handler as *const () as libc::sighandler_t;
-        sa.sa_flags = libc::SA_RESTART;
-        libc::sigaction(libc::SIGINT, &raw const sa, std::ptr::null_mut());
+        let mut set: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&raw mut set);
+        libc::sigaddset(&raw mut set, libc::SIGINT);
+        libc::pthread_sigmask(libc::SIG_BLOCK, &raw const set, std::ptr::null_mut());
     }
+
+    // Dedicated OS thread that synchronously waits for SIGINT via sigwait().
+    // No signal handlers, no tokio, no races — sigwait is deterministic.
+    std::thread::spawn(|| {
+        #[allow(unsafe_code)]
+        unsafe {
+            let mut set: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&raw mut set);
+            libc::sigaddset(&raw mut set, libc::SIGINT);
+            let mut sig: libc::c_int = 0;
+            libc::sigwait(&raw const set, &raw mut sig);
+            libc::_exit(130);
+        }
+    });
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
