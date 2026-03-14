@@ -334,8 +334,10 @@ async fn main() -> ExitCode {
     info!("Starting consensus run with {} models", cli.models.len());
 
     // Ctrl+C handler: runs on a dedicated signal thread.
-    // No stdio here — the spinner holds stderr's lock, so printing would deadlock.
-    ctrlc::set_handler(|| std::process::exit(130)).expect("failed to set Ctrl+C handler");
+    // Uses _exit() instead of exit() — the latter runs atexit handlers which try
+    // to flush stderr, deadlocking on the lock held by the spinner thread.
+    #[allow(unsafe_code)]
+    ctrlc::set_handler(|| unsafe { libc::_exit(130) }).expect("failed to set Ctrl+C handler");
 
     let run_result = engine.run(&prompt).await;
 

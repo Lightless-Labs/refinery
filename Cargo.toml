@@ -25,6 +25,7 @@ thiserror = "2"
 async-trait = "0.1"
 ctrlc = "3"
 clap = { version = "4", features = ["derive"] }
+libc = "0.2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 rand = "0.9"
