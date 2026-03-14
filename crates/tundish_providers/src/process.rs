@@ -97,19 +97,28 @@ pub async fn spawn_cli(
         cmd.arg(arg);
     }
 
-    // Detach child from the terminal so it cannot disable ISIG (which would
-    // prevent Ctrl+C from generating SIGINT for refinery).
     cmd.stdin(std::process::Stdio::null());
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
-    // Place each child in its own process group. Without this, child CLIs
-    // (which share the foreground group) can open /dev/tty and call
-    // tcsetattr() to disable ISIG, silencing Ctrl+C for the entire group.
+    // Create a new session for each child so it has no controlling terminal.
+    // Without this, child CLIs open /dev/tty, ignore SIGTTOU, and call
+    // tcsetattr() to disable ISIG — which silences Ctrl+C for the entire
+    // foreground group (including refinery). setsid() disconnects completely:
+    // open("/dev/tty") returns ENXIO, so they can't touch terminal state.
     #[cfg(unix)]
-    cmd.process_group(0);
+    {
+        #[allow(unsafe_code)]
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
 
-    // Security: kill child on drop
     cmd.kill_on_drop(true);
 
     debug!(
