@@ -1,18 +1,10 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use crate::types::{ModelId, Phase};
 
 /// Progress events emitted during a consensus run.
 #[derive(Debug, Clone)]
 pub enum ProgressEvent {
-    /// A model's subprocess outputted a line (streaming heartbeat).
-    SubprocessOutput {
-        model: ModelId,
-        lines: usize,
-        elapsed: Duration,
-    },
-
     /// A new round has started.
     RoundStarted { round: u32, total: u32 },
 
@@ -56,7 +48,7 @@ pub enum ProgressEvent {
     },
 }
 
-/// Callback for progress events.
+/// Callback for consensus progress events.
 pub type ProgressFn = Arc<dyn Fn(ProgressEvent) + Send + Sync>;
 
 /// Truncate text to `max_chars` with an ellipsis suffix.
