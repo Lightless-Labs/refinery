@@ -306,6 +306,7 @@ fn render_score_table(round_scores: &[HashMap<String, f64>], winner: Option<&str
 
     let mut table = Table::new();
     table.load_preset(NOTHING);
+    table.enforce_styling(); // Force ANSI colors when piped through indicatif
 
     // Header: empty cell + R1, R2, ...
     let mut header = vec![Cell::new("")];
@@ -347,5 +348,5 @@ fn render_score_table(round_scores: &[HashMap<String, f64>], winner: Option<&str
         table.add_row(row);
     }
 
-    format!("{table}")
+    table.trim_fmt() // trim_fmt removes trailing whitespace from NOTHING preset
 }
