@@ -55,18 +55,14 @@ impl ProgressDisplay {
     pub fn round_started(&self, round: u32, total: u32) {
         let mut inner = self.inner.lock().unwrap();
 
-        // Clear previous round's spinners
+        // Clear previous round's finished bars (convergence_check already
+        // printed the score table, so we don't print it again here).
         for pb in inner.bars.values() {
             pb.finish_and_clear();
         }
         inner.bars.clear();
         inner.current_evals.clear();
 
-        // Print score table for round 2+
-        if !inner.round_scores.is_empty() {
-            let table = render_score_table(&inner.round_scores, None);
-            let _ = self.multi.println(table);
-        }
         let _ = self.multi.println(format!("\n  Round {round}/{total}"));
     }
 
@@ -74,9 +70,12 @@ impl ProgressDisplay {
     pub fn phase_started(&self, phase: &str, models: &[ModelId]) {
         let mut inner = self.inner.lock().unwrap();
 
-        // Clear any previous phase's spinners
+        // Finish any still-spinning bars from the previous phase (keeps their
+        // final message visible — ✓/✗ lines stay on screen).
         for pb in inner.bars.values() {
-            pb.finish_and_clear();
+            if !pb.is_finished() {
+                pb.finish();
+            }
         }
         inner.bars.clear();
 
