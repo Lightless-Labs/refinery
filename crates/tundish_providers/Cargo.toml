@@ -13,6 +13,7 @@ gemini = []
 
 [dependencies]
 tundish_core = { workspace = true }
+libc = "0.2"
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
