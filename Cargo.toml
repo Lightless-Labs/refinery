@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/tundish_core",
     "crates/tundish_providers",
+    "crates/tundish_cli",
     "crates/refinery_core",
     "crates/refinery_cli",
 ]
