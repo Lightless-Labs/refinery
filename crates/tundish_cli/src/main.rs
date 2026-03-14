@@ -37,40 +37,8 @@ struct Cli {
     verbose: bool,
 }
 
-#[allow(unsafe_code)]
-extern "C" fn sigint_handler(_sig: libc::c_int) {
-    // SAFETY: _exit is async-signal-safe per POSIX.
-    unsafe { libc::_exit(130) }
-}
-
-/// Install a persistent SIGINT handler via `sigaction` before the tokio runtime starts.
-///
-/// See the equivalent function in `refinery_cli/src/main.rs` for the full explanation.
-/// Short version: `tokio::process` feature pulls in `signal-hook-registry`, which calls
-/// `sigaction(SIGCHLD, …)` on the first child spawn.  That call is harmless to SIGINT,
-/// but any call to `tokio::signal::ctrl_c()` would override SIGINT via `sigaction(SA_SIGINFO)`.
-/// Installing our handler *before* the runtime prevents all interference.
-#[allow(unsafe_code)]
-fn install_sigint_handler() {
-    unsafe {
-        let mut sa: libc::sigaction = std::mem::zeroed();
-        sa.sa_sigaction = sigint_handler as *const () as libc::sighandler_t;
-        sa.sa_flags = libc::SA_RESTART;
-        libc::sigaction(libc::SIGINT, &raw const sa, std::ptr::null_mut());
-    }
-}
-
-fn main() -> ExitCode {
-    install_sigint_handler();
-
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("Failed to create tokio runtime")
-        .block_on(async_main())
-}
-
-async fn async_main() -> ExitCode {
+#[tokio::main]
+async fn main() -> ExitCode {
     let cli = Cli::parse();
 
     if cli.verbose {
@@ -100,8 +68,14 @@ async fn async_main() -> ExitCode {
     // Build providers
     let mut providers: Vec<Arc<dyn ModelProvider>> = Vec::new();
     for model_id in &model_ids {
-        match tundish_providers::build_provider(model_id, &cli.allow_tools, timeout, idle_timeout, None)
-            .await
+        match tundish_providers::build_provider(
+            model_id,
+            &cli.allow_tools,
+            timeout,
+            idle_timeout,
+            None,
+        )
+        .await
         {
             Ok(p) => providers.push(p),
             Err(e) => {
@@ -124,25 +98,33 @@ async fn async_main() -> ExitCode {
         });
     }
 
-    // SIGINT handler was installed in `main()` before the runtime started.
-
     let mut exit_code = ExitCode::SUCCESS;
-    while let Some(result) = handles.join_next().await {
-        match result {
-            Ok((model_id, Ok(answer))) => {
-                println!("─── {model_id} ───");
-                println!("{answer}");
-                println!();
+    loop {
+        tokio::select! {
+            result = handles.join_next() => {
+                let Some(result) = result else { break };
+                match result {
+                    Ok((model_id, Ok(answer))) => {
+                        println!("─── {model_id} ───");
+                        println!("{answer}");
+                        println!();
+                    }
+                    Ok((model_id, Err(e))) => {
+                        eprintln!("─── {model_id} (ERROR) ───");
+                        eprintln!("{e}");
+                        eprintln!();
+                        exit_code = ExitCode::from(1);
+                    }
+                    Err(join_err) => {
+                        eprintln!("Task panicked: {join_err}");
+                        exit_code = ExitCode::from(1);
+                    }
+                }
             }
-            Ok((model_id, Err(e))) => {
-                eprintln!("─── {model_id} (ERROR) ───");
-                eprintln!("{e}");
-                eprintln!();
-                exit_code = ExitCode::from(1);
-            }
-            Err(join_err) => {
-                eprintln!("Task panicked: {join_err}");
-                exit_code = ExitCode::from(1);
+            _ = tokio::signal::ctrl_c() => {
+                handles.abort_all();
+                eprintln!("\nInterrupted.");
+                return ExitCode::from(130);
             }
         }
     }

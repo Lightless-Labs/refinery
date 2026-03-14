@@ -97,7 +97,10 @@ pub async fn spawn_cli(
         cmd.arg(arg);
     }
 
-    // Capture stdout as a pipe so we can read it incrementally
+    // Detach child from the terminal: prevents CLIs from calling tcsetpgrp()
+    // to steal the foreground process group, which would redirect Ctrl+C away
+    // from refinery to the child.
+    cmd.stdin(std::process::Stdio::null());
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
