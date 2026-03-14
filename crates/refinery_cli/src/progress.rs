@@ -31,6 +31,8 @@ struct Inner {
     round_scores: Vec<HashMap<String, f64>>,
     /// Per-model evaluation scores for the current round.
     current_evals: HashMap<String, Vec<f64>>,
+    /// Current phase name — tundish spinners are only shown during "propose".
+    current_phase: String,
 }
 
 impl ProgressDisplay {
@@ -47,6 +49,7 @@ impl ProgressDisplay {
                 bars: HashMap::new(),
                 round_scores: Vec::new(),
                 current_evals: HashMap::new(),
+                current_phase: String::new(),
             })),
             multi,
         }
@@ -76,6 +79,7 @@ impl ProgressDisplay {
         }
         inner.bars.clear();
 
+        inner.current_phase = phase.to_string();
         let _ = self.multi.println(format!("  ── {phase} ──"));
 
         // Only pre-create spinners for propose (one per model).
@@ -106,8 +110,13 @@ impl ProgressDisplay {
     }
 
     /// Update a model's spinner with subprocess output progress.
+    /// Only shows spinners during propose — evaluate results appear fast enough
+    /// that per-pair ✓ lines provide sufficient feedback.
     pub fn model_output(&self, model: &ModelId, lines: usize, elapsed: Duration) {
         let mut inner = self.inner.lock().unwrap();
+        if inner.current_phase != "propose" {
+            return;
+        }
         let key = model.to_string();
         let pb = Self::get_or_create_bar(&mut inner, &self.multi, &key);
         pb.set_message(format!("{model} — {lines} lines, {}s", elapsed.as_secs()));
