@@ -2,12 +2,12 @@ use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use tundish_core::error::ProviderError;
-use tundish_core::progress::ProgressFn;
-use tundish_core::types::{Message, ModelId, Role};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tracing::{debug, warn};
+use tundish_core::error::ProviderError;
+use tundish_core::progress::ProgressFn;
+use tundish_core::types::{Message, ModelId, Role};
 
 /// Maximum response size in bytes (1MB).
 const MAX_RESPONSE_SIZE: usize = 1_000_000;
