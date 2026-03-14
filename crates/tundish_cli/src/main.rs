@@ -39,11 +39,38 @@ struct Cli {
 
 #[allow(unsafe_code)]
 extern "C" fn sigint_handler(_sig: libc::c_int) {
+    // SAFETY: _exit is async-signal-safe per POSIX.
     unsafe { libc::_exit(130) }
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
+/// Install a persistent SIGINT handler via `sigaction` before the tokio runtime starts.
+///
+/// See the equivalent function in `refinery_cli/src/main.rs` for the full explanation.
+/// Short version: `tokio::process` feature pulls in `signal-hook-registry`, which calls
+/// `sigaction(SIGCHLD, …)` on the first child spawn.  That call is harmless to SIGINT,
+/// but any call to `tokio::signal::ctrl_c()` would override SIGINT via `sigaction(SA_SIGINFO)`.
+/// Installing our handler *before* the runtime prevents all interference.
+#[allow(unsafe_code)]
+fn install_sigint_handler() {
+    unsafe {
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = sigint_handler as *const () as libc::sighandler_t;
+        sa.sa_flags = libc::SA_RESTART;
+        libc::sigaction(libc::SIGINT, &raw const sa, std::ptr::null_mut());
+    }
+}
+
+fn main() -> ExitCode {
+    install_sigint_handler();
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime")
+        .block_on(async_main())
+}
+
+async fn async_main() -> ExitCode {
     let cli = Cli::parse();
 
     if cli.verbose {
@@ -97,11 +124,7 @@ async fn main() -> ExitCode {
         });
     }
 
-    // Install raw SIGINT handler that calls _exit() directly from signal context.
-    #[allow(unsafe_code)]
-    unsafe {
-        libc::signal(libc::SIGINT, sigint_handler as *const () as libc::sighandler_t);
-    }
+    // SIGINT handler was installed in `main()` before the runtime started.
 
     let mut exit_code = ExitCode::SUCCESS;
     while let Some(result) = handles.join_next().await {
