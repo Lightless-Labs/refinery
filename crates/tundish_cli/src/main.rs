@@ -37,19 +37,26 @@ struct Cli {
     verbose: bool,
 }
 
-#[allow(unsafe_code)]
-extern "C" fn sigint_handler(_sig: libc::c_int) {
-    unsafe { libc::_exit(130) }
-}
-
 fn main() -> ExitCode {
     #[allow(unsafe_code)]
     unsafe {
-        let mut sa: libc::sigaction = std::mem::zeroed();
-        sa.sa_sigaction = sigint_handler as *const () as libc::sighandler_t;
-        sa.sa_flags = libc::SA_RESTART;
-        libc::sigaction(libc::SIGINT, &raw const sa, std::ptr::null_mut());
+        let mut set: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&raw mut set);
+        libc::sigaddset(&raw mut set, libc::SIGINT);
+        libc::pthread_sigmask(libc::SIG_BLOCK, &raw const set, std::ptr::null_mut());
     }
+
+    std::thread::spawn(|| {
+        #[allow(unsafe_code)]
+        unsafe {
+            let mut set: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&raw mut set);
+            libc::sigaddset(&raw mut set, libc::SIGINT);
+            let mut sig: libc::c_int = 0;
+            libc::sigwait(&raw const set, &raw mut sig);
+            libc::_exit(130);
+        }
+    });
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -71,7 +78,6 @@ async fn async_main() -> ExitCode {
     let timeout = Duration::from_secs(cli.timeout);
     let idle_timeout = Duration::from_secs(cli.idle_timeout);
 
-    // Parse model IDs
     let model_ids: Vec<ModelId> = match cli
         .models
         .iter()
@@ -85,7 +91,6 @@ async fn async_main() -> ExitCode {
         }
     };
 
-    // Build providers
     let mut providers: Vec<Arc<dyn ModelProvider>> = Vec::new();
     for model_id in &model_ids {
         match tundish_providers::build_provider(
@@ -105,7 +110,6 @@ async fn async_main() -> ExitCode {
         }
     }
 
-    // Dispatch prompt to all models concurrently
     let messages = vec![tundish_core::Message::user(&cli.prompt)];
 
     let mut handles = tokio::task::JoinSet::new();
