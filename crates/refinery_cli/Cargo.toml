@@ -12,6 +12,7 @@ path = "src/main.rs"
 tundish_core = { workspace = true }
 tundish_providers = { workspace = true }
 refinery_core = { workspace = true }
+ctrlc = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
