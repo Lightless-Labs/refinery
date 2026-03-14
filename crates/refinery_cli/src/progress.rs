@@ -27,6 +27,8 @@ pub struct ProgressDisplay {
 struct Inner {
     /// Active progress bars, keyed by a display string (model or "reviewer → reviewee").
     bars: HashMap<String, ProgressBar>,
+    /// Finished bars from previous phases — kept alive so indicatif doesn't remove them.
+    finished: Vec<ProgressBar>,
     /// Per-round mean scores accumulated across all rounds.
     round_scores: Vec<HashMap<String, f64>>,
     /// Per-model evaluation scores for the current round.
@@ -47,6 +49,7 @@ impl ProgressDisplay {
         Self {
             inner: Arc::new(Mutex::new(Inner {
                 bars: HashMap::new(),
+                finished: Vec::new(),
                 round_scores: Vec::new(),
                 current_evals: HashMap::new(),
                 current_phase: String::new(),
@@ -58,10 +61,12 @@ impl ProgressDisplay {
     /// New round: clear old bars, print round header.
     pub fn round_started(&self, round: u32, total: u32) {
         let mut inner = self.inner.lock().unwrap();
-        for pb in inner.bars.values() {
+        // Clear all bars from previous round (propose + evaluate + finished)
+        for pb in inner.bars.values().chain(inner.finished.iter()) {
             pb.finish_and_clear();
         }
         inner.bars.clear();
+        inner.finished.clear();
         inner.current_evals.clear();
         let _ = self.multi.println(format!("\n  Round {round}/{total}"));
     }
@@ -71,13 +76,15 @@ impl ProgressDisplay {
     pub fn phase_started(&self, phase: &str, models: &[ModelId]) {
         let mut inner = self.inner.lock().unwrap();
 
-        // Finish previous phase bars but keep their messages visible
+        // Finish previous phase bars and move to `finished` to keep them
+        // rendered by indicatif (dropping the ProgressBar removes its line).
         for pb in inner.bars.values() {
             if !pb.is_finished() {
                 pb.finish();
             }
         }
-        inner.bars.clear();
+        let prev_bars: Vec<ProgressBar> = inner.bars.drain().map(|(_, pb)| pb).collect();
+        inner.finished.extend(prev_bars);
 
         inner.current_phase = phase.to_string();
         let _ = self.multi.println(format!("  ── {phase} ──"));
@@ -243,7 +250,7 @@ impl ProgressDisplay {
     /// Clear all spinners (for final cleanup).
     pub fn finish(&self) {
         let inner = self.inner.lock().unwrap();
-        for pb in inner.bars.values() {
+        for pb in inner.bars.values().chain(inner.finished.iter()) {
             pb.finish_and_clear();
         }
         let _ = self.multi.clear();
