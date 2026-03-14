@@ -134,40 +134,9 @@ struct ErrorDetail {
     retryable: bool,
 }
 
-fn main() -> ExitCode {
-    // Block SIGINT on the main thread. All future threads (including tokio workers)
-    // inherit this mask, so no thread will ever run a SIGINT handler.
-    #[allow(unsafe_code)]
-    unsafe {
-        let mut set: libc::sigset_t = std::mem::zeroed();
-        libc::sigemptyset(&raw mut set);
-        libc::sigaddset(&raw mut set, libc::SIGINT);
-        libc::pthread_sigmask(libc::SIG_BLOCK, &raw const set, std::ptr::null_mut());
-    }
-
-    // Dedicated OS thread that synchronously waits for SIGINT via sigwait().
-    // No signal handlers, no tokio, no races — sigwait is deterministic.
-    std::thread::spawn(|| {
-        #[allow(unsafe_code)]
-        unsafe {
-            let mut set: libc::sigset_t = std::mem::zeroed();
-            libc::sigemptyset(&raw mut set);
-            libc::sigaddset(&raw mut set, libc::SIGINT);
-            let mut sig: libc::c_int = 0;
-            libc::sigwait(&raw const set, &raw mut sig);
-            libc::_exit(130);
-        }
-    });
-
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("Failed to create tokio runtime")
-        .block_on(async_main())
-}
-
+#[tokio::main]
 #[allow(clippy::too_many_lines)]
-async fn async_main() -> ExitCode {
+async fn main() -> ExitCode {
     let cli = Cli::parse();
 
     // Set up tracing
