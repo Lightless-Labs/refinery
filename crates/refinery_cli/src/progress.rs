@@ -68,7 +68,12 @@ impl ProgressDisplay {
         inner.bars.clear();
         inner.finished.clear();
         inner.current_evals.clear();
-        let _ = self.multi.println(format!("\n  Round {round}/{total}"));
+
+        // Round header as a finished bar (keeps correct position in indicatif)
+        let header = self.multi.add(ProgressBar::new_spinner());
+        header.set_style(ProgressStyle::with_template("\n  {msg}").unwrap());
+        header.finish_with_message(format!("Round {round}/{total}"));
+        inner.finished.push(header);
     }
 
     /// New phase: finish (but keep visible) any previous bars, print phase header.
@@ -87,7 +92,13 @@ impl ProgressDisplay {
         inner.finished.extend(prev_bars);
 
         inner.current_phase = phase.to_string();
-        let _ = self.multi.println(format!("  ── {phase} ──"));
+
+        // Add phase header as a finished progress bar so it appears in the
+        // correct position (after previous phase bars, before new spinners).
+        let header = self.multi.add(ProgressBar::new_spinner());
+        header.set_style(ProgressStyle::with_template("  {msg}").unwrap());
+        header.finish_with_message(format!("── {phase} ──"));
+        inner.finished.push(header);
 
         let style = spinner_style();
         if phase == "propose" {
@@ -216,18 +227,23 @@ impl ProgressDisplay {
             }
         }
 
+        // Move evaluate bars to finished
+        let eval_bars: Vec<ProgressBar> = inner.bars.drain().map(|(_, pb)| pb).collect();
+        inner.finished.extend(eval_bars);
+
         let winner_name = winner.map(std::string::ToString::to_string);
 
-        if converged {
+        // Convergence status as a finished bar
+        let msg = if converged {
             let w = winner_name.as_deref().unwrap_or("?");
-            let _ = self.multi.println(format!(
-                "  \x1b[32m→ Converged!\x1b[0m Winner: {w} ({best_score:.1} ≥ {threshold:.1}, stable {stable_rounds}/{required_stable})"
-            ));
+            format!("  \x1b[32m→ Converged!\x1b[0m Winner: {w} ({best_score:.1} ≥ {threshold:.1}, stable {stable_rounds}/{required_stable})")
         } else {
-            let _ = self.multi.println(format!(
-                "  → Not converged ({best_score:.1}/{threshold:.1}, stable {stable_rounds}/{required_stable})"
-            ));
-        }
+            format!("  → Not converged ({best_score:.1}/{threshold:.1}, stable {stable_rounds}/{required_stable})")
+        };
+        let status_bar = self.multi.add(ProgressBar::new_spinner());
+        status_bar.set_style(ProgressStyle::with_template("{msg}").unwrap());
+        status_bar.finish_with_message(msg);
+        inner.finished.push(status_bar);
 
         // Finalize current round means into history
         if !inner.current_evals.is_empty() {
@@ -240,10 +256,15 @@ impl ProgressDisplay {
             inner.round_scores.push(means);
         }
 
-        // Render score table
+        // Render score table as finished bars (one per line)
         if !inner.round_scores.is_empty() {
             let table = render_score_table(&inner.round_scores, winner_name.as_deref());
-            let _ = self.multi.println(table);
+            for line in table.lines() {
+                let line_bar = self.multi.add(ProgressBar::new_spinner());
+                line_bar.set_style(ProgressStyle::with_template("{msg}").unwrap());
+                line_bar.finish_with_message(line.to_string());
+                inner.finished.push(line_bar);
+            }
         }
     }
 
