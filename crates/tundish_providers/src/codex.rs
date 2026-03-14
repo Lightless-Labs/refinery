@@ -86,6 +86,7 @@ impl CodexProvider {
             "--json".to_string(),
             "--sandbox".to_string(),
             "read-only".to_string(),
+            "--skip-git-repo-check".to_string(),
         ];
 
         if let Some(path) = schema_path {
