@@ -15,26 +15,8 @@ pub use types::{
     Role, RoundOutcome, RoundOverrides,
 };
 
-use async_trait::async_trait;
-
-/// A model provider that can send messages and receive responses.
-#[async_trait]
-pub trait ModelProvider: Send + Sync + std::fmt::Debug {
-    /// Send a sequence of messages and return the model's text response.
-    ///
-    /// When `schema` is `Some`, providers that support structured output (Claude, Codex)
-    /// will constrain the response to the given JSON schema and return the structured
-    /// output as a serialized JSON string. Providers without schema support (Gemini)
-    /// ignore the parameter and return free-form text.
-    async fn send_message(
-        &self,
-        messages: &[Message],
-        schema: Option<&str>,
-    ) -> Result<String, ProviderError>;
-
-    /// The unique identifier for this model.
-    fn model_id(&self) -> &ModelId;
-}
+// Re-export the ModelProvider trait from tundish_core
+pub use tundish_core::ModelProvider;
 
 /// Testing utilities for mock providers and strategies.
 #[cfg(any(test, feature = "testing"))]
