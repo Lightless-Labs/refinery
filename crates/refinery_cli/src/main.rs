@@ -134,9 +134,35 @@ struct ErrorDetail {
     retryable: bool,
 }
 
-#[tokio::main]
+fn main() -> ExitCode {
+    // Restore terminal sanity: a previous run (before the setsid fix) may have
+    // left ISIG disabled, which prevents Ctrl+C from generating SIGINT.
+    // This persists across commands, so we fix it on startup.
+    #[cfg(unix)]
+    {
+        use std::os::fd::AsRawFd;
+        let stderr_fd = std::io::stderr().as_raw_fd();
+        #[allow(unsafe_code)]
+        unsafe {
+            let mut termios: libc::termios = std::mem::zeroed();
+            if libc::tcgetattr(stderr_fd, &raw mut termios) == 0
+                && termios.c_lflag & libc::ISIG == 0
+            {
+                termios.c_lflag |= libc::ISIG;
+                libc::tcsetattr(stderr_fd, libc::TCSANOW, &raw const termios);
+            }
+        }
+    }
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime")
+        .block_on(async_main())
+}
+
 #[allow(clippy::too_many_lines)]
-async fn main() -> ExitCode {
+async fn async_main() -> ExitCode {
     let cli = Cli::parse();
 
     // Set up tracing
