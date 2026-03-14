@@ -12,34 +12,35 @@ use tundish_core::ModelId;
 /// Spinner character sequence for in-progress models.
 const TICK_STRINGS: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", " "];
 
+fn spinner_style() -> ProgressStyle {
+    ProgressStyle::with_template("    {spinner:.dim} {wide_msg}")
+        .unwrap()
+        .tick_strings(TICK_STRINGS)
+}
+
 /// Shared progress display state for the CLI.
-///
-/// Wraps `indicatif::MultiProgress` for per-model spinners and `comfy-table`
-/// for score tables. Thread-safe via internal `Mutex`.
 pub struct ProgressDisplay {
     inner: Arc<Mutex<Inner>>,
     multi: MultiProgress,
 }
 
 struct Inner {
-    /// Per-model progress bars, keyed by model display string.
+    /// Active progress bars, keyed by a display string (model or "reviewer → reviewee").
     bars: HashMap<String, ProgressBar>,
     /// Per-round mean scores accumulated across all rounds.
     round_scores: Vec<HashMap<String, f64>>,
-    /// Per-model evaluation scores for the current round (cleared each round).
+    /// Per-model evaluation scores for the current round.
     current_evals: HashMap<String, Vec<f64>>,
 }
 
 impl ProgressDisplay {
-    /// Create a new progress display. If `hidden` is true (non-TTY or verbose mode),
-    /// all spinners are invisible but the struct is still safe to use.
     pub fn new(hidden: bool) -> Self {
         let multi = if hidden {
             let m = MultiProgress::new();
             m.set_draw_target(ProgressDrawTarget::hidden());
             m
         } else {
-            MultiProgress::new() // defaults to stderr
+            MultiProgress::new()
         };
         Self {
             inner: Arc::new(Mutex::new(Inner {
@@ -51,27 +52,23 @@ impl ProgressDisplay {
         }
     }
 
-    /// Handle a new round starting: clear previous spinners, print score table.
+    /// New round: clear old bars, print round header.
     pub fn round_started(&self, round: u32, total: u32) {
         let mut inner = self.inner.lock().unwrap();
-
-        // Clear previous round's finished bars (convergence_check already
-        // printed the score table, so we don't print it again here).
         for pb in inner.bars.values() {
             pb.finish_and_clear();
         }
         inner.bars.clear();
         inner.current_evals.clear();
-
         let _ = self.multi.println(format!("\n  Round {round}/{total}"));
     }
 
-    /// Handle a phase starting: print phase header, create fresh spinners for models.
+    /// New phase: finish (but keep visible) any previous bars, print phase header.
+    /// For propose, pre-create spinners. For evaluate, spinners are created lazily.
     pub fn phase_started(&self, phase: &str, models: &[ModelId]) {
         let mut inner = self.inner.lock().unwrap();
 
-        // Finish any still-spinning bars from the previous phase (keeps their
-        // final message visible — ✓/✗ lines stay on screen).
+        // Finish previous phase bars but keep their messages visible
         for pb in inner.bars.values() {
             if !pb.is_finished() {
                 pb.finish();
@@ -81,26 +78,39 @@ impl ProgressDisplay {
 
         let _ = self.multi.println(format!("  ── {phase} ──"));
 
-        // Create a spinner for each model
-        let style = ProgressStyle::with_template("    {spinner:.dim} {wide_msg}")
-            .unwrap()
-            .tick_strings(TICK_STRINGS);
-
-        for model in models {
-            let pb = self.multi.add(ProgressBar::new_spinner());
-            pb.set_style(style.clone());
-            pb.set_message(format!("{model}"));
-            pb.enable_steady_tick(Duration::from_millis(80));
-            inner.bars.insert(model.to_string(), pb);
+        // Only pre-create spinners for propose (one per model).
+        // Evaluate spinners are created lazily per (reviewer, reviewee) pair.
+        if phase == "propose" {
+            let style = spinner_style();
+            for model in models {
+                let pb = self.multi.add(ProgressBar::new_spinner());
+                pb.set_style(style.clone());
+                pb.set_message(format!("{model}"));
+                pb.enable_steady_tick(Duration::from_millis(80));
+                inner.bars.insert(model.to_string(), pb);
+            }
         }
+    }
+
+    /// Get or create a spinner for a key (used by tundish callback and evaluate).
+    fn get_or_create_bar(inner: &mut Inner, multi: &MultiProgress, key: &str) -> ProgressBar {
+        if let Some(pb) = inner.bars.get(key) {
+            return pb.clone();
+        }
+        let pb = multi.add(ProgressBar::new_spinner());
+        pb.set_style(spinner_style());
+        pb.set_message(key.to_string());
+        pb.enable_steady_tick(Duration::from_millis(80));
+        inner.bars.insert(key.to_string(), pb.clone());
+        pb
     }
 
     /// Update a model's spinner with subprocess output progress.
     pub fn model_output(&self, model: &ModelId, lines: usize, elapsed: Duration) {
-        let inner = self.inner.lock().unwrap();
-        if let Some(pb) = inner.bars.get(&model.to_string()) {
-            pb.set_message(format!("{model} — {lines} lines, {}s", elapsed.as_secs()));
-        }
+        let mut inner = self.inner.lock().unwrap();
+        let key = model.to_string();
+        let pb = Self::get_or_create_bar(&mut inner, &self.multi, &key);
+        pb.set_message(format!("{model} — {lines} lines, {}s", elapsed.as_secs()));
     }
 
     /// Mark a model's proposal as completed.
@@ -122,7 +132,7 @@ impl ProgressDisplay {
         }
     }
 
-    /// Mark an evaluation as completed.
+    /// Mark an evaluation as completed. Creates spinner lazily if needed.
     #[allow(clippy::similar_names)]
     pub fn evaluation_completed(
         &self,
@@ -138,25 +148,22 @@ impl ProgressDisplay {
             .or_default()
             .push(score);
 
-        // Find the reviewer's bar (or reviewee's if we're using model bars)
-        let key = reviewer.to_string();
-        if let Some(pb) = inner.bars.get(&key) {
-            pb.finish_with_message(format!(
-                "\x1b[32m✓\x1b[0m {reviewer} → {reviewee}: {score:.1} — \"{preview}\""
-            ));
-        }
+        let key = format!("{reviewer} → {reviewee}");
+        let pb = Self::get_or_create_bar(&mut inner, &self.multi, &key);
+        pb.finish_with_message(format!(
+            "\x1b[32m✓\x1b[0m {reviewer} → {reviewee}: {score:.1} — \"{preview}\""
+        ));
     }
 
     /// Mark an evaluation as failed.
     #[allow(clippy::similar_names)]
     pub fn evaluation_failed(&self, reviewer: &ModelId, reviewee: &ModelId, error: &str) {
-        let inner = self.inner.lock().unwrap();
-        let key = reviewer.to_string();
-        if let Some(pb) = inner.bars.get(&key) {
-            pb.finish_with_message(format!(
-                "\x1b[31m✗\x1b[0m {reviewer} → {reviewee} failed — {error}"
-            ));
-        }
+        let mut inner = self.inner.lock().unwrap();
+        let key = format!("{reviewer} → {reviewee}");
+        let pb = Self::get_or_create_bar(&mut inner, &self.multi, &key);
+        pb.finish_with_message(format!(
+            "\x1b[31m✗\x1b[0m {reviewer} → {reviewee} failed — {error}"
+        ));
     }
 
     /// Print convergence check result and finalize score table.
@@ -171,6 +178,13 @@ impl ProgressDisplay {
         required_stable: u32,
     ) {
         let mut inner = self.inner.lock().unwrap();
+
+        // Finish any remaining bars
+        for pb in inner.bars.values() {
+            if !pb.is_finished() {
+                pb.finish();
+            }
+        }
 
         let winner_name = winner.map(std::string::ToString::to_string);
 
@@ -279,7 +293,6 @@ impl ProgressDisplay {
         })
     }
 
-    /// Clone the shared state for use in callbacks.
     fn clone_shared(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -294,7 +307,6 @@ fn render_score_table(round_scores: &[HashMap<String, f64>], winner: Option<&str
         return String::new();
     };
 
-    // Collect all models, sorted by latest round score desc
     let mut models: Vec<&String> = latest.keys().collect();
     models.sort_by(|a, b| {
         latest
@@ -305,16 +317,14 @@ fn render_score_table(round_scores: &[HashMap<String, f64>], winner: Option<&str
 
     let mut table = Table::new();
     table.load_preset(NOTHING);
-    table.enforce_styling(); // Force ANSI colors when piped through indicatif
+    table.enforce_styling();
 
-    // Header: empty cell + R1, R2, ...
     let mut header = vec![Cell::new("")];
     for r in 1..=round_scores.len() {
         header.push(Cell::new(format!("R{r}")).fg(Color::DarkGrey));
     }
     table.set_header(header);
 
-    // One row per model
     for name in &models {
         let is_winner = winner == Some(name.as_str());
         let color = if is_winner {
@@ -335,7 +345,6 @@ fn render_score_table(round_scores: &[HashMap<String, f64>], winner: Option<&str
             }
         }
         if is_winner {
-            // Append star to last cell
             if let Some(last) = row.last_mut() {
                 let mut s = String::new();
                 if let Some(score) = latest.get(*name) {
@@ -347,5 +356,5 @@ fn render_score_table(round_scores: &[HashMap<String, f64>], winner: Option<&str
         table.add_row(row);
     }
 
-    table.trim_fmt() // trim_fmt removes trailing whitespace from NOTHING preset
+    table.trim_fmt()
 }
