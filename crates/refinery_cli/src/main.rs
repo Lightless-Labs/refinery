@@ -134,9 +134,35 @@ struct ErrorDetail {
     retryable: bool,
 }
 
-#[tokio::main]
+/// Immediate SIGINT handler — terminates the process without going through tokio.
+#[allow(unsafe_code)]
+extern "C" fn sigint_handler(_sig: libc::c_int) {
+    unsafe { libc::_exit(130) }
+}
+
+fn main() -> ExitCode {
+    // Install SIGINT handler before tokio starts.
+    // Combined with stdin(Stdio::null()) on child processes, this ensures:
+    // 1. Children don't steal the foreground process group (no TTY)
+    // 2. SIGINT from Ctrl+C reaches refinery
+    // 3. _exit(130) terminates immediately (no atexit, no tokio)
+    #[allow(unsafe_code)]
+    unsafe {
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = sigint_handler as *const () as libc::sighandler_t;
+        sa.sa_flags = libc::SA_RESTART;
+        libc::sigaction(libc::SIGINT, &raw const sa, std::ptr::null_mut());
+    }
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime")
+        .block_on(async_main())
+}
+
 #[allow(clippy::too_many_lines)]
-async fn main() -> ExitCode {
+async fn async_main() -> ExitCode {
     let cli = Cli::parse();
 
     // Set up tracing
@@ -333,17 +359,7 @@ async fn main() -> ExitCode {
 
     info!("Starting consensus run with {} models", cli.models.len());
 
-    let run_result = tokio::select! {
-        result = engine.run(&prompt) => result,
-        _ = tokio::signal::ctrl_c() => {
-            if let Some(ref handle) = tick_handle {
-                handle.abort();
-            }
-            eprint!("\r\x1b[2K");
-            eprintln!("\nInterrupted.");
-            return ExitCode::from(130);
-        }
-    };
+    let run_result = engine.run(&prompt).await;
 
     // Stop the spinner tick task and clear the progress line
     if let Some(handle) = tick_handle {

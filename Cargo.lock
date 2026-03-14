@@ -394,6 +394,7 @@ name = "refinery_cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "libc",
  "refinery_core",
  "serde",
  "serde_json",
@@ -754,6 +755,7 @@ name = "tundish_cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "libc",
  "tokio",
  "tracing",
  "tracing-subscriber",
