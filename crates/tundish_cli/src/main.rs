@@ -93,22 +93,32 @@ async fn main() -> ExitCode {
     }
 
     let mut exit_code = ExitCode::SUCCESS;
-    while let Some(result) = handles.join_next().await {
-        match result {
-            Ok((model_id, Ok(answer))) => {
-                println!("─── {model_id} ───");
-                println!("{answer}");
-                println!();
+    loop {
+        tokio::select! {
+            result = handles.join_next() => {
+                let Some(result) = result else { break };
+                match result {
+                    Ok((model_id, Ok(answer))) => {
+                        println!("─── {model_id} ───");
+                        println!("{answer}");
+                        println!();
+                    }
+                    Ok((model_id, Err(e))) => {
+                        eprintln!("─── {model_id} (ERROR) ───");
+                        eprintln!("{e}");
+                        eprintln!();
+                        exit_code = ExitCode::from(1);
+                    }
+                    Err(join_err) => {
+                        eprintln!("Task panicked: {join_err}");
+                        exit_code = ExitCode::from(1);
+                    }
+                }
             }
-            Ok((model_id, Err(e))) => {
-                eprintln!("─── {model_id} (ERROR) ───");
-                eprintln!("{e}");
-                eprintln!();
-                exit_code = ExitCode::from(1);
-            }
-            Err(join_err) => {
-                eprintln!("Task panicked: {join_err}");
-                exit_code = ExitCode::from(1);
+            () = async { let _ = tokio::signal::ctrl_c().await; } => {
+                handles.abort_all();
+                eprintln!("\nInterrupted.");
+                return ExitCode::from(130);
             }
         }
     }
