@@ -13,6 +13,7 @@ path = "src/main.rs"
 tundish_core = { workspace = true }
 tundish_providers = { workspace = true }
 ctrlc = { workspace = true }
+libc = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }

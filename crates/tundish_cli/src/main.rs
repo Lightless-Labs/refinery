@@ -93,8 +93,10 @@ async fn main() -> ExitCode {
     }
 
     // Ctrl+C handler: runs on a dedicated signal thread.
-    // No stdio here — it can deadlock if another thread holds the stderr lock.
-    ctrlc::set_handler(|| std::process::exit(130)).expect("failed to set Ctrl+C handler");
+    // Uses _exit() instead of exit() — the latter runs atexit handlers which try
+    // to flush stdio, deadlocking if another thread holds the lock.
+    #[allow(unsafe_code)]
+    ctrlc::set_handler(|| unsafe { libc::_exit(130) }).expect("failed to set Ctrl+C handler");
 
     let mut exit_code = ExitCode::SUCCESS;
     while let Some(result) = handles.join_next().await {
