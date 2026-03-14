@@ -674,7 +674,8 @@ fn render_progress(event: refinery_core::ProgressEvent, state: &Mutex<SpinnerSta
         } => {
             s.label = None;
             eprintln!(
-                "\r\x1b[2K    \x1b[32m✓\x1b[0m {model} proposed ({word_count} words) — \"{preview}\""
+                "\r\x1b[2K    \x1b[32m✓\x1b[0m {model} proposed ({word_count} {}) — \"{preview}\"",
+                if word_count == 1 { "word" } else { "words" }
             );
         }
         ProgressEvent::ModelProposeFailed { model, error } => {
