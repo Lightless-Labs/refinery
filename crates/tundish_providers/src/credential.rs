@@ -1,7 +1,7 @@
 use std::fmt;
 
-use tundish_core::error::ProviderError;
 use tracing::info;
+use tundish_core::error::ProviderError;
 
 /// A resolved credential: the env var name and its value.
 ///

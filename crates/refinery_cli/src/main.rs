@@ -9,7 +9,9 @@ use clap::Parser;
 use serde::Serialize;
 use tracing::info;
 
-use refinery_core::types::{ConvergenceStatus, ModelId, RoundOutcome};
+use tundish_core::ModelId;
+
+use refinery_core::types::{ConvergenceStatus, RoundOutcome};
 use refinery_core::{EngineConfig, ModelProvider};
 
 /// Iterative multi-model consensus engine.
@@ -283,7 +285,24 @@ async fn main() -> ExitCode {
         None
     };
 
-    let progress: Option<refinery_core::ProgressFn> = if tick_handle.is_some() {
+    // Tundish progress: simple (model, lines, elapsed) callback for subprocess output spinner
+    let tundish_progress: Option<tundish_core::ProgressFn> = if tick_handle.is_some() {
+        let state = spinner_state.clone();
+        Some(Arc::new(
+            move |model: &ModelId, lines: usize, _elapsed: Duration| {
+                let mut s = state.lock().unwrap();
+                if s.label.is_none() {
+                    s.started = std::time::Instant::now();
+                }
+                s.label = Some(format!("{model} — {lines} lines"));
+            },
+        ))
+    } else {
+        None
+    };
+
+    // Consensus progress: handles phase-level events (proposals, evaluations, convergence)
+    let consensus_progress: Option<refinery_core::ProgressFn> = if tick_handle.is_some() {
         let state = spinner_state.clone();
         Some(Arc::new(move |event| render_progress(event, &state)))
     } else {
@@ -293,12 +312,12 @@ async fn main() -> ExitCode {
     let mut providers: Vec<Arc<dyn ModelProvider>> = Vec::new();
 
     for model_id in &model_ids {
-        match build_provider(
+        match tundish_providers::build_provider(
             model_id,
             &cli.allow_tools,
             timeout,
             idle_timeout,
-            progress.clone(),
+            tundish_progress.clone(),
         )
         .await
         {
@@ -311,7 +330,8 @@ async fn main() -> ExitCode {
     }
 
     let strategy = Box::new(refinery_core::VoteThreshold::new(cli.threshold, 2));
-    let engine = refinery_core::Engine::new(providers, strategy, config, progress.clone());
+    let engine =
+        refinery_core::Engine::new(providers, strategy, config, consensus_progress.clone());
 
     info!("Starting consensus run with {} models", cli.models.len());
 
@@ -503,55 +523,6 @@ fn parse_model_spec(input: &str) -> Result<ModelId, String> {
     }
 }
 
-async fn build_provider(
-    model_id: &ModelId,
-    allowed_tools: &[String],
-    max_timeout: Duration,
-    idle_timeout: Duration,
-    progress: Option<refinery_core::ProgressFn>,
-) -> Result<Arc<dyn ModelProvider>, Box<dyn std::error::Error>> {
-    match model_id.provider() {
-        "claude-code" => {
-            let provider = refinery_providers::claude::ClaudeProvider::new(
-                model_id.clone(),
-                allowed_tools,
-                max_timeout,
-                idle_timeout,
-                progress,
-            )
-            .await?;
-            Ok(Arc::new(provider))
-        }
-        "codex-cli" => {
-            let provider = refinery_providers::codex::CodexProvider::new(
-                model_id.clone(),
-                "xhigh",
-                allowed_tools,
-                max_timeout,
-                idle_timeout,
-                progress,
-            )
-            .await?;
-            Ok(Arc::new(provider))
-        }
-        "gemini-cli" => {
-            let provider = refinery_providers::gemini::GeminiProvider::new(
-                model_id.clone(),
-                allowed_tools,
-                max_timeout,
-                idle_timeout,
-                progress,
-            )
-            .await?;
-            Ok(Arc::new(provider))
-        }
-        other => Err(format!(
-            "Unknown provider: '{other}'. Supported: claude-code, codex-cli, gemini-cli"
-        )
-        .into()),
-    }
-}
-
 /// Build a per-run subdirectory inside the base output dir.
 ///
 /// Format: `YYYYMMDD-HHMMSS_<prompt-slug>` where the slug is the first
@@ -682,8 +653,7 @@ struct SpinnerState {
 
 /// Handle a progress event by updating shared spinner state.
 ///
-/// `SubprocessOutput` sets the spinner message (the tick task renders it).
-/// All other events clear the spinner and print a final line.
+/// All events clear the spinner and print a final line.
 #[allow(clippy::too_many_lines)]
 fn render_progress(event: refinery_core::ProgressEvent, state: &Mutex<SpinnerState>) {
     use refinery_core::ProgressEvent;
@@ -700,12 +670,6 @@ fn render_progress(event: refinery_core::ProgressEvent, state: &Mutex<SpinnerSta
             s.label = None;
             eprint!("\r\x1b[2K");
             eprintln!("  ── {phase} ──");
-        }
-        ProgressEvent::SubprocessOutput { model, lines, .. } => {
-            if s.label.is_none() {
-                s.started = std::time::Instant::now();
-            }
-            s.label = Some(format!("{model} — {lines} lines"));
         }
         ProgressEvent::ModelProposed {
             model,
