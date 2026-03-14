@@ -248,9 +248,13 @@ impl ProgressDisplay {
         // Convergence status as a finished bar
         let msg = if converged {
             let w = winner_name.as_deref().unwrap_or("?");
-            format!("  \x1b[32m→ Converged!\x1b[0m Winner: {w} ({best_score:.1} ≥ {threshold:.1}, stable {stable_rounds}/{required_stable})")
+            format!(
+                "  \x1b[32m→ Converged!\x1b[0m Winner: {w} ({best_score:.1} ≥ {threshold:.1}, stable {stable_rounds}/{required_stable})"
+            )
         } else {
-            format!("  → Not converged ({best_score:.1}/{threshold:.1}, stable {stable_rounds}/{required_stable})")
+            format!(
+                "  → Not converged ({best_score:.1}/{threshold:.1}, stable {stable_rounds}/{required_stable})"
+            )
         };
         let status_bar = self.multi.add(ProgressBar::new_spinner());
         status_bar.set_style(ProgressStyle::with_template("{msg}").unwrap());

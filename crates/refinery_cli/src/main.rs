@@ -484,12 +484,8 @@ fn read_and_validate_files(
 /// Accepts `provider/model` or provider-only (applies default model).
 fn parse_model_spec(input: &str) -> Result<ModelId, String> {
     if input.contains('/') {
+        // Split on first slash: provider/model (model may contain slashes for opencode)
         let (provider, model) = input.split_once('/').unwrap();
-        if model.contains('/') {
-            return Err(format!(
-                "Model spec must be 'provider/model', got extra '/': '{input}'"
-            ));
-        }
         if provider.is_empty() || model.is_empty() {
             return Err(format!("Invalid model spec: '{input}'"));
         }
@@ -502,10 +498,10 @@ fn parse_model_spec(input: &str) -> Result<ModelId, String> {
             "claude" | "codex" | "gemini" => Err(format!(
                 "Unknown provider '{input}'. The format is now 'provider/model'. \
                  Did you mean '{input}-code' or '{input}-cli'? \
-                 Supported providers: claude-code, codex-cli, gemini-cli"
+                 Supported providers: claude-code, codex-cli, gemini-cli, opencode"
             )),
             _ => Err(format!(
-                "Unknown provider '{input}'. Supported: claude-code, codex-cli, gemini-cli"
+                "Unknown provider '{input}'. Supported: claude-code, codex-cli, gemini-cli, opencode"
             )),
         }
     }
