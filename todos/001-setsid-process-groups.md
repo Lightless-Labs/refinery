@@ -3,6 +3,8 @@ title: "feat: setsid process groups for child process cleanup"
 priority: high
 milestone: v0.1
 deferred_from: PR #1 review
+status: completed
+completed: 2026-03-14
 ---
 
 # setsid process groups for child process cleanup
@@ -21,7 +23,14 @@ Use `setsid` (Unix) to place each spawned CLI process in its own process group, 
 - macOS and Linux both support `setsid`
 - Windows is out of scope for v0
 
+## Implementation
+
+Completed in `crates/tundish_providers/src/process.rs` — `spawn_cli()` uses `pre_exec(|| setsid())` to create a new session for each child. Combined with `stdin(Stdio::null())` and `kill_on_drop(true)` for defense in depth.
+
+Additionally, `crates/refinery_cli/src/main.rs` restores terminal ISIG on startup to heal corruption from previous runs.
+
 ## References
 
-- `crates/refinery_providers/src/process.rs` — `spawn_cli()` function
+- `crates/tundish_providers/src/process.rs` — `spawn_cli()` function (was `refinery_providers`)
+- `docs/solutions/runtime-errors/ctrl-c-sigint-terminal-isolation.md` — full debugging saga
 - Plan: `docs/plans/2026-02-10-feat-consensus-loop-engine-plan.md` (§ process management)
