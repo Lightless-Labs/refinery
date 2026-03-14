@@ -61,9 +61,9 @@ impl ProgressDisplay {
     /// New round: clear old bars, print round header.
     pub fn round_started(&self, round: u32, total: u32) {
         let mut inner = self.inner.lock().unwrap();
-        // Clear all bars from previous round (propose + evaluate + finished)
+        // Remove all bars from previous round from the MultiProgress display
         for pb in inner.bars.values().chain(inner.finished.iter()) {
-            pb.finish_and_clear();
+            self.multi.remove(pb);
         }
         inner.bars.clear();
         inner.finished.clear();
@@ -272,7 +272,7 @@ impl ProgressDisplay {
     pub fn finish(&self) {
         let inner = self.inner.lock().unwrap();
         for pb in inner.bars.values().chain(inner.finished.iter()) {
-            pb.finish_and_clear();
+            self.multi.remove(pb);
         }
         let _ = self.multi.clear();
     }
