@@ -97,12 +97,17 @@ pub async fn spawn_cli(
         cmd.arg(arg);
     }
 
-    // Detach child from the terminal: prevents CLIs from calling tcsetpgrp()
-    // to steal the foreground process group, which would redirect Ctrl+C away
-    // from refinery to the child.
+    // Detach child from the terminal so it cannot disable ISIG (which would
+    // prevent Ctrl+C from generating SIGINT for refinery).
     cmd.stdin(std::process::Stdio::null());
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
+
+    // Place each child in its own process group. Without this, child CLIs
+    // (which share the foreground group) can open /dev/tty and call
+    // tcsetattr() to disable ISIG, silencing Ctrl+C for the entire group.
+    #[cfg(unix)]
+    cmd.process_group(0);
 
     // Security: kill child on drop
     cmd.kill_on_drop(true);
