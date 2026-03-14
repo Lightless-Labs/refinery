@@ -333,7 +333,21 @@ async fn main() -> ExitCode {
 
     info!("Starting consensus run with {} models", cli.models.len());
 
-    let run_result = engine.run(&prompt).await;
+    // Race the consensus run against Ctrl+C
+    let run_result = tokio::select! {
+        result = engine.run(&prompt) => result,
+        () = async {
+            let _ = tokio::signal::ctrl_c().await;
+        } => {
+            // Clean up spinner and exit immediately
+            if let Some(ref handle) = tick_handle {
+                handle.abort();
+            }
+            eprint!("\r\x1b[2K");
+            eprintln!("\nInterrupted.");
+            return ExitCode::from(130);
+        }
+    };
 
     // Stop the spinner tick task and clear the progress line
     if let Some(handle) = tick_handle {
