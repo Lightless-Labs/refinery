@@ -134,6 +134,11 @@ struct ErrorDetail {
     retryable: bool,
 }
 
+#[allow(unsafe_code)]
+extern "C" fn sigint_handler(_sig: libc::c_int) {
+    unsafe { libc::_exit(130) }
+}
+
 #[tokio::main]
 #[allow(clippy::too_many_lines)]
 async fn main() -> ExitCode {
@@ -333,11 +338,12 @@ async fn main() -> ExitCode {
 
     info!("Starting consensus run with {} models", cli.models.len());
 
-    // Ctrl+C handler: runs on a dedicated signal thread.
-    // Uses _exit() instead of exit() — the latter runs atexit handlers which try
-    // to flush stderr, deadlocking on the lock held by the spinner thread.
+    // Install raw SIGINT handler that calls _exit() directly from signal context.
+    // No threads, no pipes, no crate — just the kernel calling _exit() immediately.
     #[allow(unsafe_code)]
-    ctrlc::set_handler(|| unsafe { libc::_exit(130) }).expect("failed to set Ctrl+C handler");
+    unsafe {
+        libc::signal(libc::SIGINT, sigint_handler as *const () as libc::sighandler_t);
+    }
 
     let run_result = engine.run(&prompt).await;
 

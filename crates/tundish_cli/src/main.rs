@@ -37,6 +37,11 @@ struct Cli {
     verbose: bool,
 }
 
+#[allow(unsafe_code)]
+extern "C" fn sigint_handler(_sig: libc::c_int) {
+    unsafe { libc::_exit(130) }
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -92,11 +97,11 @@ async fn main() -> ExitCode {
         });
     }
 
-    // Ctrl+C handler: runs on a dedicated signal thread.
-    // Uses _exit() instead of exit() — the latter runs atexit handlers which try
-    // to flush stdio, deadlocking if another thread holds the lock.
+    // Install raw SIGINT handler that calls _exit() directly from signal context.
     #[allow(unsafe_code)]
-    ctrlc::set_handler(|| unsafe { libc::_exit(130) }).expect("failed to set Ctrl+C handler");
+    unsafe {
+        libc::signal(libc::SIGINT, sigint_handler as *const () as libc::sighandler_t);
+    }
 
     let mut exit_code = ExitCode::SUCCESS;
     while let Some(result) = handles.join_next().await {
