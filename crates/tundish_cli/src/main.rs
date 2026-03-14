@@ -37,35 +37,8 @@ struct Cli {
     verbose: bool,
 }
 
-fn main() -> ExitCode {
-    #[allow(unsafe_code)]
-    unsafe {
-        let mut set: libc::sigset_t = std::mem::zeroed();
-        libc::sigemptyset(&raw mut set);
-        libc::sigaddset(&raw mut set, libc::SIGINT);
-        libc::pthread_sigmask(libc::SIG_BLOCK, &raw const set, std::ptr::null_mut());
-    }
-
-    std::thread::spawn(|| {
-        #[allow(unsafe_code)]
-        unsafe {
-            let mut set: libc::sigset_t = std::mem::zeroed();
-            libc::sigemptyset(&raw mut set);
-            libc::sigaddset(&raw mut set, libc::SIGINT);
-            let mut sig: libc::c_int = 0;
-            libc::sigwait(&raw const set, &raw mut sig);
-            libc::_exit(130);
-        }
-    });
-
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("Failed to create tokio runtime")
-        .block_on(async_main())
-}
-
-async fn async_main() -> ExitCode {
+#[tokio::main]
+async fn main() -> ExitCode {
     let cli = Cli::parse();
 
     if cli.verbose {
