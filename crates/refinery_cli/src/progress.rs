@@ -82,16 +82,30 @@ impl ProgressDisplay {
         inner.current_phase = phase.to_string();
         let _ = self.multi.println(format!("  ── {phase} ──"));
 
-        // Only pre-create spinners for propose (one per model).
-        // Evaluate spinners are created lazily per (reviewer, reviewee) pair.
+        let style = spinner_style();
         if phase == "propose" {
-            let style = spinner_style();
+            // One spinner per model
             for model in models {
                 let pb = self.multi.add(ProgressBar::new_spinner());
                 pb.set_style(style.clone());
                 pb.set_message(format!("{model}"));
                 pb.enable_steady_tick(Duration::from_millis(80));
                 inner.bars.insert(model.to_string(), pb);
+            }
+        } else if phase == "evaluate" {
+            // One spinner per (reviewer → reviewee) pair: N*(N-1)
+            for reviewer in models {
+                for reviewee in models {
+                    if reviewer == reviewee {
+                        continue;
+                    }
+                    let key = format!("{reviewer} → {reviewee}");
+                    let pb = self.multi.add(ProgressBar::new_spinner());
+                    pb.set_style(style.clone());
+                    pb.set_message(key.clone());
+                    pb.enable_steady_tick(Duration::from_millis(80));
+                    inner.bars.insert(key, pb);
+                }
             }
         }
     }
