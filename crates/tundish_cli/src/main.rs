@@ -37,8 +37,28 @@ struct Cli {
     verbose: bool,
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
+#[allow(unsafe_code)]
+extern "C" fn sigint_handler(_sig: libc::c_int) {
+    unsafe { libc::_exit(130) }
+}
+
+fn main() -> ExitCode {
+    #[allow(unsafe_code)]
+    unsafe {
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = sigint_handler as *const () as libc::sighandler_t;
+        sa.sa_flags = libc::SA_RESTART;
+        libc::sigaction(libc::SIGINT, &raw const sa, std::ptr::null_mut());
+    }
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime")
+        .block_on(async_main())
+}
+
+async fn async_main() -> ExitCode {
     let cli = Cli::parse();
 
     if cli.verbose {
@@ -99,32 +119,22 @@ async fn main() -> ExitCode {
     }
 
     let mut exit_code = ExitCode::SUCCESS;
-    loop {
-        tokio::select! {
-            result = handles.join_next() => {
-                let Some(result) = result else { break };
-                match result {
-                    Ok((model_id, Ok(answer))) => {
-                        println!("─── {model_id} ───");
-                        println!("{answer}");
-                        println!();
-                    }
-                    Ok((model_id, Err(e))) => {
-                        eprintln!("─── {model_id} (ERROR) ───");
-                        eprintln!("{e}");
-                        eprintln!();
-                        exit_code = ExitCode::from(1);
-                    }
-                    Err(join_err) => {
-                        eprintln!("Task panicked: {join_err}");
-                        exit_code = ExitCode::from(1);
-                    }
-                }
+    while let Some(result) = handles.join_next().await {
+        match result {
+            Ok((model_id, Ok(answer))) => {
+                println!("─── {model_id} ───");
+                println!("{answer}");
+                println!();
             }
-            _ = tokio::signal::ctrl_c() => {
-                handles.abort_all();
-                eprintln!("\nInterrupted.");
-                return ExitCode::from(130);
+            Ok((model_id, Err(e))) => {
+                eprintln!("─── {model_id} (ERROR) ───");
+                eprintln!("{e}");
+                eprintln!();
+                exit_code = ExitCode::from(1);
+            }
+            Err(join_err) => {
+                eprintln!("Task panicked: {join_err}");
+                exit_code = ExitCode::from(1);
             }
         }
     }
