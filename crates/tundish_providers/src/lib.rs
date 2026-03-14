@@ -8,6 +8,8 @@ pub mod claude;
 pub mod codex;
 #[cfg(feature = "gemini")]
 pub mod gemini;
+#[cfg(feature = "opencode")]
+pub mod opencode;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -60,10 +62,21 @@ pub async fn build_provider(
             .await?;
             Ok(Arc::new(provider))
         }
+        #[cfg(feature = "opencode")]
+        "opencode" => {
+            let provider = opencode::OpenCodeProvider::new(
+                model_id.clone(),
+                max_timeout,
+                idle_timeout,
+                progress,
+            )
+            .await?;
+            Ok(Arc::new(provider))
+        }
         other => Err(ProviderError::ProcessFailed {
             model: model_id.clone(),
             message: format!(
-                "Unknown provider: '{other}'. Supported: claude-code, codex-cli, gemini-cli"
+                "Unknown provider: '{other}'. Supported: claude-code, codex-cli, gemini-cli, opencode"
             ),
             exit_code: None,
         }),
