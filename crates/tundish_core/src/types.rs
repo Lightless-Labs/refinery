@@ -30,9 +30,6 @@ impl ModelId {
             if model.is_empty() {
                 return Err(format!("empty model in '{s}'"));
             }
-            if model.contains('/') {
-                return Err(format!("model name must not contain '/': '{s}'"));
-            }
             Ok(Self {
                 provider: provider.to_string(),
                 model: model.to_string(),
@@ -150,7 +147,10 @@ mod tests {
         assert!(ModelId::parse("no-slash").is_err());
         assert!(ModelId::parse("/no-provider").is_err());
         assert!(ModelId::parse("no-model/").is_err());
-        assert!(ModelId::parse("a/b/c").is_err());
+        // a/b/c is valid: provider="a", model="b/c" (opencode uses slashed models)
+        let id = ModelId::parse("a/b/c").unwrap();
+        assert_eq!(id.provider(), "a");
+        assert_eq!(id.model(), "b/c");
     }
 
     #[test]
