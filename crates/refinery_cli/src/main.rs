@@ -134,143 +134,9 @@ struct ErrorDetail {
     retryable: bool,
 }
 
-/// SIGINT handler registered via `sigaction(2)` using `SA_RESETHAND`.
-///
-/// # Why `sigaction` with `SA_RESETHAND` instead of `libc::signal()` or `tokio::signal`
-///
-/// The `tokio::process` feature (pulled in to spawn child CLIs) activates the
-/// `signal-hook-registry` crate.  **Every time `tokio::process::Command::spawn()` is called**,
-/// tokio calls `signal(SignalKind::child())` internally, which makes
-/// `signal_hook_registry::register(SIGCHLD, …)` invoke `sigaction(SIGCHLD, …)`.
-///
-/// `signal-hook-registry` installs its own multiplexer handler via `sigaction` which:
-/// 1. Uses `SA_SIGINFO` — a 3-argument (`sig, siginfo*, context*`) calling convention.
-/// 2. **Does NOT set `SA_RESETHAND`**, so the handler persists forever.
-/// 3. Stores the *previous* `sa_sigaction` in a `Prev` struct and calls it from inside
-///    the multiplexer's own handler.
-///
-/// Because `SIGCHLD` registration happens on the **first** `spawn()` call — which occurs
-/// **after** the `#[tokio::main]` runtime starts but **before** we can install our own
-/// handler — the sequence is:
-///
-/// ```text
-/// 1. #[tokio::main] starts runtime (no signal registration yet)
-/// 2. engine.run() → spawn_cli() → tokio::process::Command::spawn()
-///    └── signal_hook_registry::register(SIGCHLD) via sigaction(SA_SIGINFO | SA_RESTART)
-/// 3. [our old code] libc::signal(SIGINT, handler)
-///    └── libc::signal() uses sigaction internally but clears SA_SIGINFO and SA_RESTART,
-///        setting a plain SIG_DFL-compatible handler struct.
-/// 4. User presses Ctrl+C → SIGINT delivered
-///    └── For SIGCHLD, signal-hook-registry stored "prev" = whatever was there before
-///        its sigaction call. But we're dealing with SIGINT now.
-/// ```
-///
-/// The *actual* reason `libc::signal(SIGINT, …)` doesn't work here is subtler:
-/// `libc::signal()` on macOS/Linux is implemented as `sigaction` with `SA_RESETHAND`
-/// (BSD semantics on macOS, see `signal(2)`).  This resets the handler to `SIG_DFL`
-/// after the **first** delivery — meaning the first Ctrl+C would restore the default
-/// handler (terminate) and the second would work.  But the first should also work since
-/// our handler calls `_exit` before returning.
-///
-/// The **real** problem is that tokio's `tokio::process::Command::spawn()` path, through
-/// `signal-hook-registry`, calls `sigaction(SIGCHLD, new, old)` where `new` uses
-/// `SA_SIGINFO | SA_RESTART`.  This call **incidentally also re-initializes the global
-/// `sigprocmask`** state on some platforms.  More critically: our `libc::signal()` call
-/// (which expands to `sigaction`) stores a `sighandler_t` sized struct while
-/// signal-hook-registry uses the `sa_sigaction` (3-arg) form.  If signal-hook-registry
-/// happens to call `sigaction(SIGCHLD)` *after* we installed our SIGINT handler
-/// (impossible here since SIGCHLD != SIGINT), that can't interfere.
-///
-/// **The true root cause** is the ordering:
-/// - Our handler is installed at line ~345, *after* `build_provider(…).await` at line ~318.
-/// - `build_provider` calls `process::resolve_binary("claude").await` which calls
-///   `tokio::process::Command::new("which").output().await`.
-/// - That first `spawn()` registers the SIGCHLD multiplexer via `sigaction`.
-/// - The `sigaction` call for SIGCHLD does **not** touch SIGINT, so SIGINT disposition
-///   is still the default (`SIG_DFL`) from process start.
-/// - We then call `libc::signal(SIGINT, sigint_handler)` → this *should* work…
-///
-/// …unless `tokio::signal::ctrl_c()` or similar was called somewhere, which would have
-/// registered SIGINT through `signal-hook-registry`, turning the SIGINT disposition into
-/// signal-hook-registry's multiplexer handler via `sigaction(SA_SIGINFO)`.  If that
-/// happened and the signal-hook-registry multiplexer is the active SIGINT handler, then
-/// our subsequent `libc::signal(SIGINT, fn)` call *would* override it correctly.
-///
-/// **After exhaustive analysis** the problem is definitively:
-/// - `libc::signal()` on macOS uses `sigaction` with `SA_RESETHAND` — the handler
-///   self-destructs on first delivery.
-/// - Our handler calls `libc::_exit(130)` so it never "returns" to trigger reset.
-///   That should be fine — `_exit` terminates the process.
-/// - BUT: there's a race.  The signal can be delivered to **any thread** in the tokio
-///   thread pool.  On a multi-threaded runtime (`rt-multi-thread`), SIGINT may be
-///   delivered to a worker thread that is in the middle of a `sigprocmask` call with
-///   signals temporarily blocked — in which case it's queued, and delivery is deferred.
-///   Meanwhile our process is still running. The user sees no response.
-///
-/// **Solution**: Use `sigaction` directly with `SA_RESETHAND` disabled (i.e. persistent
-/// handler) and — critically — **block SIGINT on all worker threads** so that it can
-/// only be delivered to the main thread, or use `pthread_sigmask` to ensure the signal
-/// reaches the handler.  The cleanest fix is to use `tokio::signal::ctrl_c()` inside
-/// `engine.run()` via a `tokio::select!`, OR to use `sigaction` with `SA_NODEFER` to
-/// ensure re-entrant delivery.
-///
-/// The **simplest correct fix** that avoids all the above pitfalls is to install the
-/// SIGINT handler using `sigaction` with an explicit `sa_mask` that unblocks SIGINT on
-/// all threads, and to do it **before** starting the tokio runtime (i.e. in a
-/// synchronous `fn main()` that then creates and blocks on the runtime).  That way no
-/// tokio machinery can interfere with the SIGINT disposition.
-///
-/// We implement this by splitting `main` into a sync outer function (which installs the
-/// signal handler) and an async inner function (which does all the work).
-#[allow(unsafe_code)]
-extern "C" fn sigint_handler(_sig: libc::c_int) {
-    // SAFETY: _exit is async-signal-safe per POSIX.
-    unsafe { libc::_exit(130) }
-}
-
-/// Install a persistent SIGINT handler **before** the tokio runtime starts.
-///
-/// Using `sigaction` rather than `libc::signal`:
-/// - `sigaction` gives us explicit control over `sa_flags` — no hidden `SA_RESETHAND`.
-/// - We set `SA_RESTART` so that interrupted syscalls are retried (important for I/O).
-/// - We explicitly zero `sa_mask` so SIGINT is not blocked inside our handler.
-///
-/// This must be called **before** `#[tokio::main]` (or any runtime creation) to prevent
-/// tokio or `signal-hook-registry` from seeing a different SIGINT disposition.
-#[allow(unsafe_code)]
-fn install_sigint_handler() {
-    unsafe {
-        let mut sa: libc::sigaction = std::mem::zeroed();
-        sa.sa_sigaction = sigint_handler as *const () as libc::sighandler_t;
-        // SA_RESTART: restart interrupted syscalls rather than failing with EINTR.
-        // No SA_RESETHAND: keep the handler persistent (don't revert to SIG_DFL).
-        // No SA_SIGINFO: our handler takes only (c_int), which matches the default ABI.
-        sa.sa_flags = libc::SA_RESTART;
-        // sa_mask is zeroed — SIGINT is not additionally blocked inside our handler.
-        libc::sigaction(libc::SIGINT, &raw const sa, std::ptr::null_mut());
-    }
-}
-
-fn main() -> ExitCode {
-    // Install SIGINT handler HERE, before the tokio runtime exists.
-    // Once tokio starts (rt-multi-thread), it spins up worker threads.  On the first
-    // child-process spawn, tokio calls signal_hook_registry::register(SIGCHLD) which
-    // calls sigaction(SIGCHLD, …).  That call does NOT touch SIGINT, so our handler
-    // is safe.  But any use of tokio::signal::ctrl_c() would call
-    // signal_hook_registry::register(SIGINT, …) which *would* override our handler
-    // with signal-hook-registry's SA_SIGINFO multiplexer.  By installing first (and
-    // never calling tokio::signal::ctrl_c()), we keep full control.
-    install_sigint_handler();
-
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("Failed to create tokio runtime")
-        .block_on(async_main())
-}
-
+#[tokio::main]
 #[allow(clippy::too_many_lines)]
-async fn async_main() -> ExitCode {
+async fn main() -> ExitCode {
     let cli = Cli::parse();
 
     // Set up tracing
@@ -467,11 +333,17 @@ async fn async_main() -> ExitCode {
 
     info!("Starting consensus run with {} models", cli.models.len());
 
-    // SIGINT handler was already installed in `main()` before the runtime started.
-    // Do NOT install it again here — calling any sigaction/signal after the first
-    // tokio child spawn would race with signal-hook-registry's SIGCHLD multiplexer.
-
-    let run_result = engine.run(&prompt).await;
+    let run_result = tokio::select! {
+        result = engine.run(&prompt) => result,
+        _ = tokio::signal::ctrl_c() => {
+            if let Some(ref handle) = tick_handle {
+                handle.abort();
+            }
+            eprint!("\r\x1b[2K");
+            eprintln!("\nInterrupted.");
+            return ExitCode::from(130);
+        }
+    };
 
     // Stop the spinner tick task and clear the progress line
     if let Some(handle) = tick_handle {
