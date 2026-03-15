@@ -78,10 +78,6 @@ struct Cli {
     /// Show estimated call count and cost, then exit
     #[arg(long)]
     dry_run: bool,
-
-    /// Run a UI test with mock data (no API calls). Scenarios: propose, evaluate, converge, multi-round
-    #[arg(long = "test-ui", value_name = "SCENARIO", hide = true)]
-    test_ui: Option<String>,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -183,11 +179,6 @@ async fn async_main() -> ExitCode {
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
         .init();
-
-    // UI test mode: run mock scenarios without API calls
-    if let Some(ref scenario) = cli.test_ui {
-        return progress::run_test_ui(scenario);
-    }
 
     // Resolve prompt text from positional arg or stdin
     let prompt_text: Option<String> = match cli.prompt.as_deref() {
