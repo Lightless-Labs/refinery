@@ -52,12 +52,16 @@ pub enum ProgressEvent {
 pub type ProgressFn = Arc<dyn Fn(ProgressEvent) + Send + Sync>;
 
 /// Truncate text to `max_chars` with an ellipsis suffix.
+///
+/// Collapses newlines into spaces so the preview is always single-line.
 #[must_use]
 pub fn preview(text: &str, max_chars: usize) -> String {
-    // Operate on first line only to avoid newlines in display
-    let first_line = text.lines().next().unwrap_or("");
-    let trimmed: String = first_line.chars().take(max_chars).collect();
-    if first_line.chars().count() > max_chars {
+    let collapsed: String = text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let trimmed: String = collapsed.chars().take(max_chars).collect();
+    if collapsed.chars().count() > max_chars {
         format!("{trimmed}...")
     } else {
         trimmed
