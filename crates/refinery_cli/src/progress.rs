@@ -39,6 +39,10 @@ struct Inner {
     current_evals: HashMap<String, Vec<f64>>,
     /// Current phase name — tundish spinners are only shown during "propose".
     current_phase: String,
+    /// Models that successfully proposed this round (used to create evaluate pairs).
+    proposed_models: Vec<ModelId>,
+    /// Models that have been permanently dropped (failed in a previous round).
+    dropped_models: Vec<ModelId>,
 }
 
 impl ProgressDisplay {
@@ -58,6 +62,8 @@ impl ProgressDisplay {
                 round_scores: Vec::new(),
                 current_evals: HashMap::new(),
                 current_phase: String::new(),
+                proposed_models: Vec::new(),
+                dropped_models: Vec::new(),
             })),
             multi,
         }
@@ -74,6 +80,7 @@ impl ProgressDisplay {
         inner.bars.clear();
         inner.round_bars.clear();
         inner.current_evals.clear();
+        inner.proposed_models.clear();
 
         // Round header as a finished bar (keeps correct position in indicatif)
         let header = self.multi.add(ProgressBar::new_spinner());
@@ -108,8 +115,11 @@ impl ProgressDisplay {
 
         let style = spinner_style();
         if phase == "propose" {
-            // One spinner per model
+            // One spinner per model (skip permanently dropped models)
             for model in models {
+                if inner.dropped_models.contains(model) {
+                    continue;
+                }
                 let pb = self.multi.add(ProgressBar::new_spinner());
                 pb.set_style(style.clone());
                 pb.set_message(format!("{model}"));
@@ -117,9 +127,11 @@ impl ProgressDisplay {
                 inner.bars.insert(model.to_string(), pb);
             }
         } else if phase == "evaluate" {
-            // One spinner per (reviewer → reviewee) pair: N*(N-1)
-            for reviewer in models {
-                for reviewee in models {
+            // One spinner per (reviewer → reviewee) pair, only for models
+            // that actually proposed (excludes failed/dropped models).
+            let active = &inner.proposed_models.clone();
+            for reviewer in active {
+                for reviewee in active {
                     if reviewer == reviewee {
                         continue;
                     }
@@ -162,7 +174,8 @@ impl ProgressDisplay {
 
     /// Mark a model's proposal as completed.
     pub fn model_proposed(&self, model: &ModelId, word_count: usize, preview: &str) {
-        let inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap();
+        inner.proposed_models.push(model.clone());
         let word_label = if word_count == 1 { "word" } else { "words" };
         if let Some(pb) = inner.bars.get(&model.to_string()) {
             pb.finish_with_message(format!(
@@ -173,7 +186,16 @@ impl ProgressDisplay {
 
     /// Mark a model's proposal as failed.
     pub fn model_propose_failed(&self, model: &ModelId, error: &str) {
-        let inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap();
+        // Track permanently failed models (invalid model, auth, binary not found).
+        // Transient errors (timeout) are not tracked — model is retried next round.
+        let is_permanent = error.contains("process failed")
+            || error.contains("not found")
+            || error.contains("not supported")
+            || error.contains("credential");
+        if is_permanent && !inner.dropped_models.contains(model) {
+            inner.dropped_models.push(model.clone());
+        }
         if let Some(pb) = inner.bars.get(&model.to_string()) {
             pb.finish_with_message(format!("\x1b[31m✗\x1b[0m {model} failed — {error}"));
         }

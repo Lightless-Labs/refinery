@@ -295,9 +295,10 @@ impl Session<'_> {
         let mut call_count =
             u32::try_from(proposal_set.proposals.len() + proposal_set.dropped.len()).unwrap_or(0);
 
-        // Track failed models so they're excluded from future rounds
-        for (model_id, _) in &proposal_set.dropped {
-            if !self.permanently_dropped.contains(model_id) {
+        // Track models with permanent failures (invalid model, auth) so they're
+        // excluded from future rounds. Transient failures (timeout) are retried.
+        for (model_id, error) in &proposal_set.dropped {
+            if error.is_permanent() && !self.permanently_dropped.contains(model_id) {
                 self.permanently_dropped.push(model_id.clone());
             }
         }
