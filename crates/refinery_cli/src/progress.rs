@@ -1,183 +1,290 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
+use std::io::{IsTerminal as _, Write as _};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use comfy_table::presets::NOTHING;
 use comfy_table::{Cell, Color, Table};
-use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 
 use tundish_core::ModelId;
 
-/// Spinner character sequence for in-progress models.
-const TICK_STRINGS: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", " "];
+const TICK_CHARS: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-fn spinner_style() -> ProgressStyle {
-    ProgressStyle::with_template("    {spinner:.dim} {wide_msg}")
-        .unwrap()
-        .tick_strings(TICK_STRINGS)
-}
-
-/// Shared progress display state for the CLI.
+/// Simple frame-based progress display.
+///
+/// Each tick, clears the previous frame and redraws the current state.
+/// No indicatif, no managed bars — just eprint the frame.
 pub struct ProgressDisplay {
     inner: Arc<Mutex<Inner>>,
-    multi: MultiProgress,
+    hidden: bool,
 }
 
 struct Inner {
-    /// Active progress bars, keyed by a display string (model or "reviewer → reviewee").
-    bars: HashMap<String, ProgressBar>,
-    /// Finished bars from current round (propose/evaluate results, headers).
-    /// Cleared on new round start.
-    round_bars: Vec<ProgressBar>,
-    /// Per-round mean scores accumulated across all rounds.
+    /// Current round/total.
+    round: u32,
+    total: u32,
+    /// Current phase.
+    phase: String,
+    /// Per-model status during propose.
+    propose_status: Vec<ModelStatus>,
+    /// Per-pair status during evaluate.
+    eval_status: Vec<EvalStatus>,
+    /// Convergence result (set after evaluate).
+    convergence: Option<ConvergenceInfo>,
+    /// Score table history.
     round_scores: Vec<HashMap<String, f64>>,
-    /// Per-model evaluation scores for the current round.
+    /// Current round evals accumulator.
     current_evals: HashMap<String, Vec<f64>>,
-    /// Current phase name — tundish spinners are only shown during "propose".
-    current_phase: String,
-    /// Models that successfully proposed this round (used to create evaluate pairs).
+    /// Models that proposed successfully this round.
     proposed_models: Vec<ModelId>,
-    /// Models that have been permanently dropped (failed in a previous round).
+    /// Permanently dropped models.
     dropped_models: Vec<ModelId>,
+    /// Animation frame counter.
+    tick: usize,
+    /// Number of lines in the last rendered frame.
+    last_frame_lines: usize,
+}
+
+#[derive(Clone)]
+enum ModelStatus {
+    Running { model: String, lines: usize, elapsed: Duration },
+    Done { model: String, word_count: usize, preview: String },
+    Failed { model: String, error: String },
+}
+
+#[derive(Clone)]
+struct EvalStatus {
+    key: String,
+    done: bool,
+    result: Option<String>,
+}
+
+#[derive(Clone)]
+struct ConvergenceInfo {
+    converged: bool,
+    winner: Option<String>,
+    best_score: f64,
+    threshold: f64,
+    stable_rounds: u32,
+    required_stable: u32,
 }
 
 impl ProgressDisplay {
     pub fn new(hidden: bool) -> Self {
-        let multi = if hidden {
-            let m = MultiProgress::new();
-            m.set_draw_target(ProgressDrawTarget::hidden());
-            m
-        } else {
-            MultiProgress::new()
-        };
         Self {
             inner: Arc::new(Mutex::new(Inner {
-                bars: HashMap::new(),
-                round_bars: Vec::new(),
+                round: 0,
+                total: 0,
+                phase: String::new(),
+                propose_status: Vec::new(),
+                eval_status: Vec::new(),
+                convergence: None,
                 round_scores: Vec::new(),
                 current_evals: HashMap::new(),
-                current_phase: String::new(),
                 proposed_models: Vec::new(),
                 dropped_models: Vec::new(),
+                tick: 0,
+                last_frame_lines: 0,
             })),
-            multi,
+            hidden,
         }
     }
 
-    /// New round: clear old bars, print round header.
+    fn redraw(&self) {
+        if self.hidden {
+            return;
+        }
+        let mut inner = self.inner.lock().unwrap();
+        inner.tick += 1;
+
+        let frame = Self::render_frame(&inner);
+        let new_lines = frame.lines().count();
+
+        // Move cursor up to erase previous frame
+        if inner.last_frame_lines > 0 {
+            eprint!("\x1b[{}A", inner.last_frame_lines);
+        }
+        // Clear each line and print new frame
+        // (can't use eprintln — \x1b[2K must be in the same write as the content)
+        #[allow(clippy::print_with_newline)]
+        for line in frame.lines() {
+            eprint!("\x1b[2K{line}\n");
+        }
+        let _ = std::io::stderr().flush();
+        inner.last_frame_lines = new_lines;
+    }
+
+    fn render_frame(inner: &Inner) -> String {
+        let mut out = String::new();
+
+        // Score table from previous rounds
+        if !inner.round_scores.is_empty() {
+            let winner = inner.convergence.as_ref().and_then(|c| c.winner.as_deref());
+            let table = render_score_table(&inner.round_scores, winner);
+            out.push_str(&table);
+            out.push('\n');
+        }
+
+        if inner.round == 0 {
+            return out;
+        }
+
+        // Round header
+        let _ = writeln!(out, "\n  Round {}/{}", inner.round, inner.total);
+
+        // Propose phase
+        if inner.phase == "propose" || !inner.propose_status.is_empty() {
+            let _ = writeln!(out, "  ── propose ──");
+            for status in &inner.propose_status {
+                match status {
+                    ModelStatus::Running { model, lines, elapsed } => {
+                        let spin = TICK_CHARS[inner.tick % TICK_CHARS.len()];
+                        if *lines > 0 {
+                            let _ = writeln!(out, "    {spin} {model} — {lines} lines, {}s", elapsed.as_secs());
+                        } else {
+                            let _ = writeln!(out, "    {spin} {model}");
+                        }
+                    }
+                    ModelStatus::Done { model, word_count, preview } => {
+                        let word_label = if *word_count == 1 { "word" } else { "words" };
+                        let _ = writeln!(out, "    \x1b[32m✓\x1b[0m {model} proposed ({word_count} {word_label}) — \"{preview}\"");
+                    }
+                    ModelStatus::Failed { model, error } => {
+                        let _ = writeln!(out, "    \x1b[31m✗\x1b[0m {model} failed — {error}");
+                    }
+                }
+            }
+        }
+
+        // Evaluate phase
+        if inner.phase == "evaluate" || !inner.eval_status.is_empty() {
+            let _ = writeln!(out, "  ── evaluate ──");
+            for status in &inner.eval_status {
+                if status.done {
+                    if let Some(ref result) = status.result {
+                        let _ = writeln!(out, "    {result}");
+                    }
+                } else {
+                    let spin = TICK_CHARS[inner.tick % TICK_CHARS.len()];
+                    let _ = writeln!(out, "    {spin} {}", status.key);
+                }
+            }
+        }
+
+        // Convergence
+        if let Some(ref conv) = inner.convergence {
+            if conv.converged {
+                let w = conv.winner.as_deref().unwrap_or("?");
+                let _ = writeln!(out,
+                    "  \x1b[32m→ Converged!\x1b[0m Winner: {w} ({:.1} ≥ {:.1}, stable {}/{})",
+                    conv.best_score, conv.threshold, conv.stable_rounds, conv.required_stable
+                );
+            } else {
+                let _ = writeln!(out,
+                    "  → Not converged ({:.1}/{:.1}, stable {}/{})",
+                    conv.best_score, conv.threshold, conv.stable_rounds, conv.required_stable
+                );
+            }
+        }
+
+        out
+    }
+
     pub fn round_started(&self, round: u32, total: u32) {
         let mut inner = self.inner.lock().unwrap();
-        // Clear round content (propose/evaluate bars + headers) but keep
-        // the score table visible — it persists until next convergence_check.
-        for pb in inner.bars.values().chain(inner.round_bars.iter()) {
-            self.multi.remove(pb);
+        // Erase previous frame before resetting state
+        if inner.last_frame_lines > 0 {
+            eprint!("\x1b[{}A", inner.last_frame_lines);
+            #[allow(clippy::print_with_newline)]
+            for _ in 0..inner.last_frame_lines {
+                eprint!("\x1b[2K\n");
+            }
+            eprint!("\x1b[{}A", inner.last_frame_lines);
+            let _ = std::io::stderr().flush();
+            inner.last_frame_lines = 0;
         }
-        inner.bars.clear();
-        inner.round_bars.clear();
+        inner.round = round;
+        inner.total = total;
+        inner.phase.clear();
+        inner.propose_status.clear();
+        inner.eval_status.clear();
+        inner.convergence = None;
         inner.current_evals.clear();
         inner.proposed_models.clear();
-
-        let _ = self.multi.println(format!("\n  Round {round}/{total}"));
+        drop(inner);
+        self.redraw();
     }
 
-    /// New phase: finish (but keep visible) any previous bars, print phase header.
-    /// For propose, pre-create spinners. For evaluate, spinners are created lazily.
     pub fn phase_started(&self, phase: &str, models: &[ModelId]) {
         let mut inner = self.inner.lock().unwrap();
+        inner.phase = phase.to_string();
 
-        // Finish previous phase bars and move to `finished` to keep them
-        // rendered by indicatif (dropping the ProgressBar removes its line).
-        for pb in inner.bars.values() {
-            if !pb.is_finished() {
-                pb.finish();
-            }
-        }
-        let prev_bars: Vec<ProgressBar> = inner.bars.drain().map(|(_, pb)| pb).collect();
-        inner.round_bars.extend(prev_bars);
-
-        inner.current_phase = phase.to_string();
-
-        let _ = self.multi.println(format!("  ── {phase} ──"));
-
-        let style = spinner_style();
         if phase == "propose" {
-            // One spinner per model (skip permanently dropped models)
-            for model in models {
-                if inner.dropped_models.contains(model) {
-                    continue;
-                }
-                let pb = self.multi.add(ProgressBar::new_spinner());
-                pb.set_style(style.clone());
-                pb.set_message(format!("{model}"));
-                pb.enable_steady_tick(Duration::from_millis(80));
-                inner.bars.insert(model.to_string(), pb);
-            }
+            inner.propose_status = models
+                .iter()
+                .filter(|m| !inner.dropped_models.contains(m))
+                .map(|m| ModelStatus::Running {
+                    model: m.to_string(),
+                    lines: 0,
+                    elapsed: Duration::ZERO,
+                })
+                .collect();
         } else if phase == "evaluate" {
-            // One spinner per (reviewer → reviewee) pair, only for models
-            // that actually proposed (excludes failed/dropped models).
-            let active = &inner.proposed_models.clone();
-            for reviewer in active {
-                for reviewee in active {
-                    if reviewer == reviewee {
-                        continue;
-                    }
-                    let key = format!("{reviewer} → {reviewee}");
-                    let pb = self.multi.add(ProgressBar::new_spinner());
-                    pb.set_style(style.clone());
-                    pb.set_message(key.clone());
-                    pb.enable_steady_tick(Duration::from_millis(80));
-                    inner.bars.insert(key, pb);
-                }
-            }
+            let active = inner.proposed_models.clone();
+            inner.eval_status = active
+                .iter()
+                .flat_map(|reviewer| {
+                    active.iter().filter(move |reviewee| *reviewee != reviewer).map(move |reviewee| {
+                        EvalStatus {
+                            key: format!("{reviewer} → {reviewee}"),
+                            done: false,
+                            result: None,
+                        }
+                    })
+                })
+                .collect();
         }
+        drop(inner);
+        self.redraw();
     }
 
-    /// Get or create a spinner for a key (used by tundish callback and evaluate).
-    fn get_or_create_bar(inner: &mut Inner, multi: &MultiProgress, key: &str) -> ProgressBar {
-        if let Some(pb) = inner.bars.get(key) {
-            return pb.clone();
-        }
-        let pb = multi.add(ProgressBar::new_spinner());
-        pb.set_style(spinner_style());
-        pb.set_message(key.to_string());
-        pb.enable_steady_tick(Duration::from_millis(80));
-        inner.bars.insert(key.to_string(), pb.clone());
-        pb
-    }
-
-    /// Update a model's spinner with subprocess output progress.
-    /// Only shows spinners during propose — evaluate results appear fast enough
-    /// that per-pair ✓ lines provide sufficient feedback.
     pub fn model_output(&self, model: &ModelId, lines: usize, elapsed: Duration) {
         let mut inner = self.inner.lock().unwrap();
-        if inner.current_phase != "propose" {
+        if inner.phase != "propose" {
             return;
         }
         let key = model.to_string();
-        let pb = Self::get_or_create_bar(&mut inner, &self.multi, &key);
-        pb.set_message(format!("{model} — {lines} lines, {}s", elapsed.as_secs()));
+        for status in &mut inner.propose_status {
+            if let ModelStatus::Running { model: m, .. } = status {
+                if *m == key {
+                    *status = ModelStatus::Running { model: key.clone(), lines, elapsed };
+                    break;
+                }
+            }
+        }
+        drop(inner);
+        self.redraw();
     }
 
-    /// Mark a model's proposal as completed.
     pub fn model_proposed(&self, model: &ModelId, word_count: usize, preview: &str) {
         let mut inner = self.inner.lock().unwrap();
         inner.proposed_models.push(model.clone());
-        let word_label = if word_count == 1 { "word" } else { "words" };
         let key = model.to_string();
-        // Remove the spinner and print completion as scrollback text.
-        // Using println instead of finish_with_message prevents the line from
-        // being part of indicatif's managed bar set (which would misorder it
-        // if evaluate spinners are already active).
-        if let Some(pb) = inner.bars.remove(&key) {
-            self.multi.remove(&pb);
+        for status in &mut inner.propose_status {
+            if matches!(status, ModelStatus::Running { model: m, .. } if *m == key) {
+                *status = ModelStatus::Done {
+                    model: key.clone(),
+                    word_count,
+                    preview: preview.to_string(),
+                };
+                break;
+            }
         }
-        let _ = self.multi.println(format!(
-            "    \x1b[32m✓\x1b[0m {model} proposed ({word_count} {word_label}) — \"{preview}\""
-        ));
+        drop(inner);
+        self.redraw();
     }
 
-    /// Mark a model's proposal as failed.
     pub fn model_propose_failed(&self, model: &ModelId, error: &str) {
         let mut inner = self.inner.lock().unwrap();
         let is_permanent = error.contains("process failed")
@@ -188,15 +295,19 @@ impl ProgressDisplay {
             inner.dropped_models.push(model.clone());
         }
         let key = model.to_string();
-        if let Some(pb) = inner.bars.remove(&key) {
-            self.multi.remove(&pb);
+        for status in &mut inner.propose_status {
+            if matches!(status, ModelStatus::Running { model: m, .. } if *m == key) {
+                *status = ModelStatus::Failed {
+                    model: key.clone(),
+                    error: error.to_string(),
+                };
+                break;
+            }
         }
-        let _ = self
-            .multi
-            .println(format!("    \x1b[31m✗\x1b[0m {model} failed — {error}"));
+        drop(inner);
+        self.redraw();
     }
 
-    /// Mark an evaluation as completed. Creates spinner lazily if needed.
     #[allow(clippy::similar_names)]
     pub fn evaluation_completed(
         &self,
@@ -211,30 +322,37 @@ impl ProgressDisplay {
             .entry(reviewee.to_string())
             .or_default()
             .push(score);
-
         let key = format!("{reviewer} → {reviewee}");
-        if let Some(pb) = inner.bars.remove(&key) {
-            self.multi.remove(&pb);
+        for status in &mut inner.eval_status {
+            if status.key == key {
+                status.done = true;
+                status.result = Some(format!(
+                    "\x1b[32m✓\x1b[0m {reviewer} → {reviewee}: {score:.1} — \"{preview}\""
+                ));
+                break;
+            }
         }
-        let _ = self.multi.println(format!(
-            "    \x1b[32m✓\x1b[0m {reviewer} → {reviewee}: {score:.1} — \"{preview}\""
-        ));
+        drop(inner);
+        self.redraw();
     }
 
-    /// Mark an evaluation as failed.
     #[allow(clippy::similar_names)]
     pub fn evaluation_failed(&self, reviewer: &ModelId, reviewee: &ModelId, error: &str) {
         let mut inner = self.inner.lock().unwrap();
         let key = format!("{reviewer} → {reviewee}");
-        if let Some(pb) = inner.bars.remove(&key) {
-            self.multi.remove(&pb);
+        for status in &mut inner.eval_status {
+            if status.key == key {
+                status.done = true;
+                status.result = Some(format!(
+                    "\x1b[31m✗\x1b[0m {reviewer} → {reviewee} failed — {error}"
+                ));
+                break;
+            }
         }
-        let _ = self.multi.println(format!(
-            "    \x1b[31m✗\x1b[0m {reviewer} → {reviewee} failed — {error}"
-        ));
+        drop(inner);
+        self.redraw();
     }
 
-    /// Print convergence check result and finalize score table.
     #[allow(clippy::too_many_arguments)]
     pub fn convergence_check(
         &self,
@@ -246,32 +364,18 @@ impl ProgressDisplay {
         required_stable: u32,
     ) {
         let mut inner = self.inner.lock().unwrap();
-
-        // Finish any remaining bars
-        for pb in inner.bars.values() {
-            if !pb.is_finished() {
-                pb.finish();
-            }
-        }
-
-        // Move evaluate bars to round_bars
-        let eval_bars: Vec<ProgressBar> = inner.bars.drain().map(|(_, pb)| pb).collect();
-        inner.round_bars.extend(eval_bars);
-
         let winner_name = winner.map(std::string::ToString::to_string);
 
-        if converged {
-            let w = winner_name.as_deref().unwrap_or("?");
-            let _ = self.multi.println(format!(
-                "  \x1b[32m→ Converged!\x1b[0m Winner: {w} ({best_score:.1} ≥ {threshold:.1}, stable {stable_rounds}/{required_stable})"
-            ));
-        } else {
-            let _ = self.multi.println(format!(
-                "  → Not converged ({best_score:.1}/{threshold:.1}, stable {stable_rounds}/{required_stable})"
-            ));
-        }
+        inner.convergence = Some(ConvergenceInfo {
+            converged,
+            winner: winner_name.clone(),
+            best_score,
+            threshold,
+            stable_rounds,
+            required_stable,
+        });
 
-        // Finalize current round means into history
+        // Finalize scores
         if !inner.current_evals.is_empty() {
             let mut means: HashMap<String, f64> = HashMap::new();
             for (model, scores) in &inner.current_evals {
@@ -281,28 +385,35 @@ impl ProgressDisplay {
             }
             inner.round_scores.push(means);
         }
-
-        // Render score table
-        if !inner.round_scores.is_empty() {
-            let table = render_score_table(&inner.round_scores, winner_name.as_deref());
-            let _ = self.multi.println(table);
-        }
+        drop(inner);
+        self.redraw();
     }
 
-    /// Clear all spinners (for final cleanup).
     pub fn finish(&self) {
-        let inner = self.inner.lock().unwrap();
-        for pb in inner
-            .bars
-            .values()
-            .chain(inner.round_bars.iter())
-        {
-            self.multi.remove(pb);
+        if self.hidden {
+            return;
         }
-        let _ = self.multi.clear();
+        // Print final frame without clearing (so it stays in scrollback)
+        let inner = self.inner.lock().unwrap();
+        if inner.last_frame_lines > 0 {
+            // Already displayed — leave it
+        }
     }
 
-    /// Build a tundish progress callback that updates per-model spinners.
+    /// Start the background tick task for spinner animation.
+    pub fn start_tick(&self) -> Option<tokio::task::JoinHandle<()>> {
+        if self.hidden || !std::io::stderr().is_terminal() {
+            return None;
+        }
+        let display = self.clone_shared();
+        Some(tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(80)).await;
+                display.redraw();
+            }
+        }))
+    }
+
     pub fn tundish_callback(&self) -> tundish_core::ProgressFn {
         let display = self.clone_shared();
         Arc::new(move |model: &ModelId, lines: usize, elapsed: Duration| {
@@ -310,59 +421,32 @@ impl ProgressDisplay {
         })
     }
 
-    /// Build a consensus progress callback that handles phase-level events.
     pub fn consensus_callback(&self, models: Vec<ModelId>) -> refinery_core::ProgressFn {
         let display = self.clone_shared();
         Arc::new(move |event| {
             use refinery_core::ProgressEvent;
             match event {
-                ProgressEvent::RoundStarted { round, total } => {
-                    display.round_started(round, total);
-                }
+                ProgressEvent::RoundStarted { round, total } => display.round_started(round, total),
                 ProgressEvent::PhaseStarted { phase, .. } => {
                     display.phase_started(&phase.to_string(), &models);
                 }
-                ProgressEvent::ModelProposed {
-                    model,
-                    word_count,
-                    preview,
-                } => {
+                ProgressEvent::ModelProposed { model, word_count, preview } => {
                     display.model_proposed(&model, word_count, &preview);
                 }
                 ProgressEvent::ModelProposeFailed { model, error } => {
                     display.model_propose_failed(&model, &error);
                 }
-                ProgressEvent::EvaluationCompleted {
-                    reviewer,
-                    reviewee,
-                    score,
-                    preview,
-                } => {
+                ProgressEvent::EvaluationCompleted { reviewer, reviewee, score, preview } => {
                     display.evaluation_completed(&reviewer, &reviewee, score, &preview);
                 }
-                ProgressEvent::EvaluationFailed {
-                    reviewer,
-                    reviewee,
-                    error,
-                } => {
+                ProgressEvent::EvaluationFailed { reviewer, reviewee, error } => {
                     display.evaluation_failed(&reviewer, &reviewee, &error);
                 }
                 ProgressEvent::ConvergenceCheck {
-                    converged,
-                    winner,
-                    best_score,
-                    threshold,
-                    stable_rounds,
-                    required_stable,
-                    ..
+                    converged, winner, best_score, threshold, stable_rounds, required_stable, ..
                 } => {
                     display.convergence_check(
-                        converged,
-                        winner.as_ref(),
-                        best_score,
-                        threshold,
-                        stable_rounds,
-                        required_stable,
+                        converged, winner.as_ref(), best_score, threshold, stable_rounds, required_stable,
                     );
                 }
             }
@@ -372,12 +456,11 @@ impl ProgressDisplay {
     fn clone_shared(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            multi: self.multi.clone(),
+            hidden: self.hidden,
         }
     }
 }
 
-/// Render the progressive score table using comfy-table.
 fn render_score_table(round_scores: &[HashMap<String, f64>], winner: Option<&str>) -> String {
     let Some(latest) = round_scores.last() else {
         return String::new();
@@ -403,21 +486,13 @@ fn render_score_table(round_scores: &[HashMap<String, f64>], winner: Option<&str
 
     for name in &models {
         let is_winner = winner == Some(name.as_str());
-        let color = if is_winner {
-            Color::Green
-        } else {
-            Color::Reset
-        };
+        let color = if is_winner { Color::Green } else { Color::Reset };
 
         let mut row = vec![Cell::new(format!("    {name}")).fg(color)];
         for round in round_scores {
             match round.get(*name) {
-                Some(score) => {
-                    row.push(Cell::new(format!("{score:>4.1}")).fg(color));
-                }
-                None => {
-                    row.push(Cell::new("   -").fg(Color::DarkGrey));
-                }
+                Some(score) => row.push(Cell::new(format!("{score:>4.1}")).fg(color)),
+                None => row.push(Cell::new("   -").fg(Color::DarkGrey)),
             }
         }
         if is_winner {

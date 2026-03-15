@@ -326,9 +326,13 @@ async fn async_main() -> ExitCode {
 
     info!("Starting consensus run with {} models", cli.models.len());
 
+    let tick_handle = display.start_tick();
     let run_result = engine.run(&prompt).await;
 
-    // Clean up progress display
+    // Stop tick task and finalize display
+    if let Some(handle) = tick_handle {
+        handle.abort();
+    }
     display.finish();
 
     match run_result {
