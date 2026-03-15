@@ -439,10 +439,17 @@ impl Session<'_> {
         self,
         status: ConvergenceStatus,
     ) -> (ConsensusOutcome, Vec<RoundOutcome>) {
-        let winner = self
-            .current_winner
-            .unwrap_or_else(|| ModelId::from_parts("unknown", "unknown"));
-        let answer = self.last_answers.get(&winner).cloned().unwrap_or_default();
+        // Only declare a winner if consensus was actually reached.
+        // MaxRoundsExceeded = no consensus, so no winner.
+        let has_winner = !matches!(status, ConvergenceStatus::MaxRoundsExceeded);
+        let winner = if has_winner {
+            self.current_winner.clone()
+        } else {
+            None
+        };
+        let answer = winner
+            .as_ref()
+            .and_then(|w| self.last_answers.get(w).cloned());
 
         let all_answers: Vec<ModelAnswer> = self
             .last_answers
@@ -499,7 +506,7 @@ mod tests {
 
         let (result, _rounds) = engine.run("test prompt").await.unwrap();
         assert_eq!(result.status, ConvergenceStatus::SingleModel);
-        assert_eq!(result.winner, ModelId::new("test/solo"));
+        assert_eq!(result.winner, Some(ModelId::new("test/solo")));
         assert_eq!(result.total_calls, 1);
         assert_eq!(result.final_round, 1);
     }

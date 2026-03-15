@@ -90,7 +90,8 @@ enum OutputFormat {
 #[derive(Serialize)]
 struct JsonOutput {
     status: String,
-    winner: WinnerOutput,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    winner: Option<WinnerOutput>,
     final_round: u32,
     strategy: String,
     all_answers: Vec<AnswerOutput>,
@@ -353,10 +354,10 @@ async fn async_main() -> ExitCode {
                     };
                     let json_output = JsonOutput {
                         status: status_str,
-                        winner: WinnerOutput {
-                            model_id: outcome.winner.to_string(),
-                            answer: outcome.answer.clone(),
-                        },
+                        winner: outcome.winner.as_ref().map(|w| WinnerOutput {
+                            model_id: w.to_string(),
+                            answer: outcome.answer.clone().unwrap_or_default(),
+                        }),
                         final_round: outcome.final_round,
                         strategy: "vote-threshold".to_string(),
                         all_answers: outcome
@@ -385,12 +386,21 @@ async fn async_main() -> ExitCode {
                 }
                 OutputFormat::Text => {
                     println!("Status: {:?}", outcome.status);
-                    println!("Winner: {}", outcome.winner);
+                    if let Some(ref winner) = outcome.winner {
+                        println!("Winner: {winner}");
+                    } else {
+                        println!("Winner: none (no consensus)");
+                    }
                     println!("Rounds: {}", outcome.final_round);
                     println!("Total calls: {}", outcome.total_calls);
                     println!("Elapsed: {:?}", outcome.elapsed);
-                    println!("\n--- Answer ---\n");
-                    println!("{}", outcome.answer);
+                    if let Some(ref answer) = outcome.answer {
+                        println!("\n--- Answer ---\n");
+                        println!("{answer}");
+                    } else {
+                        println!("\n--- No consensus reached ---");
+                        println!("All answers are included in the output.");
+                    }
                 }
             }
 

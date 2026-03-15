@@ -133,8 +133,10 @@ pub enum ConvergenceStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsensusOutcome {
     pub status: ConvergenceStatus,
-    pub winner: ModelId,
-    pub answer: String,
+    /// The winning model. `None` when `MaxRoundsExceeded` (no consensus reached).
+    pub winner: Option<ModelId>,
+    /// The winning answer. `None` when `MaxRoundsExceeded`.
+    pub answer: Option<String>,
     pub final_round: u32,
     pub all_answers: Vec<ModelAnswer>,
     pub total_calls: u32,
