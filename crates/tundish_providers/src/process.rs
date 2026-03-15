@@ -236,11 +236,7 @@ pub async fn spawn_cli(
             let stderr = stderr_task.await.unwrap_or_default();
 
             if !status.success() {
-                let raw = if stderr.is_empty() {
-                    &stdout
-                } else {
-                    &stderr
-                };
+                let raw = if stderr.is_empty() { &stdout } else { &stderr };
                 // Extract a meaningful error message from the raw output.
                 // Try structured JSONL error events first (codex puts errors
                 // in stdout), then fall back to the first non-noise text line.
@@ -319,7 +315,9 @@ fn detect_fatal_stream_error(line: &str) -> Option<String> {
     }
 
     // Claude result with is_error
-    if event_type == "result" && parsed.get("is_error").and_then(serde_json::Value::as_bool) == Some(true) {
+    if event_type == "result"
+        && parsed.get("is_error").and_then(serde_json::Value::as_bool) == Some(true)
+    {
         let msg = parsed
             .get("result")
             .and_then(|r| r.as_str())
@@ -553,13 +551,13 @@ pub fn extract_claude_response(output: &str) -> Result<String, ProviderError> {
         };
         match extract_from_result_event(&parsed) {
             Ok(Some(answer)) => return Ok(answer),
-            Ok(None) => {},
+            Ok(None) => {}
             Err(msg) => {
                 return Err(ProviderError::ProcessFailed {
                     model,
                     message: msg,
                     exit_code: None,
-                })
+                });
             }
         }
     }
@@ -574,13 +572,13 @@ pub fn extract_claude_response(output: &str) -> Result<String, ProviderError> {
         for event in events.iter().rev() {
             match extract_from_result_event(event) {
                 Ok(Some(answer)) => return Ok(answer),
-                Ok(None) => {},
+                Ok(None) => {}
                 Err(msg) => {
                     return Err(ProviderError::ProcessFailed {
                         model,
                         message: msg,
                         exit_code: None,
-                    })
+                    });
                 }
             }
         }
