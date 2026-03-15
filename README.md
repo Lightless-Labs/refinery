@@ -50,15 +50,45 @@ Short aliases use each provider's default model
 refinery "your prompt" --models claude-code,codex-cli,gemini-cli
 ```
 
-Available providers and defaults:
+Refinery dispatches prompts to locally installed and authenticated CLI tools. Install and authenticate any of the supported CLIs, then pass them as `--models`:
 
-| Provider | Default model | Binary |
-|----------|---------------|--------|
-| `claude-code` | claude-opus-4-6 | `claude` |
-| `codex-cli` | gpt-5.4 | `codex` |
-| `gemini-cli` | gemini-3.1-pro-preview | `gemini` |
+| Provider | Default model | CLI binary | Install |
+|----------|---------------|------------|---------|
+| `claude-code` | claude-opus-4-6 | `claude` | `npm i -g @anthropic-ai/claude-code` |
+| `codex-cli` | gpt-5.4 | `codex` | `npm i -g @openai/codex` |
+| `gemini-cli` | gemini-3.1-pro-preview | `gemini` | `npm i -g @google/gemini-cli` |
+| `opencode` | *(none — model required)* | `opencode` | [opencode.ai](https://opencode.ai) |
 
-Override the model with `provider/model` syntax (e.g., `claude-code/claude-sonnet-4-6`, `codex-cli/o3-pro`).
+Override the model with `provider/model` syntax:
+
+```sh
+refinery "prompt" --models claude-code/claude-sonnet-4-6,codex-cli/o3-pro
+```
+
+### OpenCode models
+
+OpenCode supports multiple sub-providers. Use `opencode/sub-provider/model`:
+
+```sh
+refinery "prompt" --models \
+  opencode/opencode/minimax-m2.5-free,\
+  opencode/kimi-for-coding/kimi-k2-thinking,\
+  opencode/minimax-coding-plan/MiniMax-M2.5,\
+  opencode/zai-coding-plan/glm-5
+```
+
+Run `opencode models` to list all available models.
+
+### Mixing providers
+
+Use any combination of providers in a single run:
+
+```sh
+refinery "prompt" --models \
+  claude-code,codex-cli,gemini-cli,\
+  opencode/kimi-for-coding/kimi-k2-thinking,\
+  opencode/zai-coding-plan/glm-5
+```
 
 ### Options
 
@@ -432,8 +462,12 @@ let providers = vec![/* your Arc<dyn ModelProvider> instances */];
 let strategy = Box::new(VoteThreshold::new(8.0, 2));
 let engine = Engine::new(providers, strategy, config);
 
-let outcome = engine.run("What is the capital of France?").await?;
-println!("{}: {}", outcome.winner, outcome.answer);
+let (outcome, _rounds) = engine.run("What is the capital of France?").await?;
+if let (Some(winner), Some(answer)) = (&outcome.winner, &outcome.answer) {
+    println!("{winner}: {answer}");
+} else {
+    println!("No consensus reached. All answers: {:?}", outcome.all_answers);
+}
 ```
 
 ### Round-by-Round
@@ -573,6 +607,20 @@ If you already have a Google Cloud API key with the Generative Language API enab
 ```bash
 GOOGLE_API_KEY=AI...
 ```
+
+### OpenCode
+
+OpenCode manages its own credentials. Install and authenticate:
+
+```bash
+# Install
+brew install opencode  # or see https://opencode.ai
+
+# Authenticate (interactive)
+opencode auth
+```
+
+No environment variables needed — refinery passes `HOME` so OpenCode can find its stored credentials.
 
 ### AWS Bedrock
 
