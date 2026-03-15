@@ -99,17 +99,28 @@ impl ProgressDisplay {
         inner.tick += 1;
 
         let frame = Self::render_frame(&inner);
-        let new_lines = frame.lines().count();
+
+        // Get terminal width to truncate lines (prevents wrapping which breaks cursor math)
+        let term_width = terminal_width();
+        let lines: Vec<&str> = frame.lines().collect();
+        let new_lines = lines.len();
 
         // Move cursor up to erase previous frame
         if inner.last_frame_lines > 0 {
             eprint!("\x1b[{}A", inner.last_frame_lines);
         }
-        // Clear each line and print new frame
-        // (can't use eprintln — \x1b[2K must be in the same write as the content)
+        // Clear each line and print new frame, truncated to terminal width
         #[allow(clippy::print_with_newline)]
-        for line in frame.lines() {
-            eprint!("\x1b[2K{line}\n");
+        for line in &lines {
+            // Strip ANSI codes when measuring visible width
+            let visible_len = strip_ansi_len(line);
+            if visible_len > term_width {
+                // Truncate at byte boundary near term_width visible chars
+                let truncated = truncate_to_width(line, term_width.saturating_sub(3));
+                eprint!("\x1b[2K{truncated}...\n");
+            } else {
+                eprint!("\x1b[2K{line}\n");
+            }
         }
         let _ = std::io::stderr().flush();
         inner.last_frame_lines = new_lines;
@@ -459,6 +470,62 @@ impl ProgressDisplay {
             hidden: self.hidden,
         }
     }
+}
+
+/// Get terminal width, defaulting to 120 if unknown.
+fn terminal_width() -> usize {
+    // Use libc ioctl to get terminal width
+    #[cfg(unix)]
+    {
+        #[allow(unsafe_code)]
+        unsafe {
+            let mut winsize: libc::winsize = std::mem::zeroed();
+            if libc::ioctl(2, libc::TIOCGWINSZ, &raw mut winsize) == 0 && winsize.ws_col > 0 {
+                return winsize.ws_col as usize;
+            }
+        }
+    }
+    120
+}
+
+/// Count visible characters (excluding ANSI escape sequences).
+fn strip_ansi_len(s: &str) -> usize {
+    let mut len = 0;
+    let mut in_escape = false;
+    for c in s.chars() {
+        if in_escape {
+            if c.is_ascii_alphabetic() {
+                in_escape = false;
+            }
+        } else if c == '\x1b' {
+            in_escape = true;
+        } else {
+            len += 1;
+        }
+    }
+    len
+}
+
+/// Truncate a string to approximately `max_visible` visible characters,
+/// preserving ANSI escape sequences.
+fn truncate_to_width(s: &str, max_visible: usize) -> &str {
+    let mut visible = 0;
+    let mut in_escape = false;
+    for (i, c) in s.char_indices() {
+        if in_escape {
+            if c.is_ascii_alphabetic() {
+                in_escape = false;
+            }
+        } else if c == '\x1b' {
+            in_escape = true;
+        } else {
+            visible += 1;
+            if visible >= max_visible {
+                return &s[..i + c.len_utf8()];
+            }
+        }
+    }
+    s
 }
 
 fn render_score_table(round_scores: &[HashMap<String, f64>], winner: Option<&str>) -> String {
