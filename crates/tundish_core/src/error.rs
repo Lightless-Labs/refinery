@@ -42,6 +42,23 @@ pub enum ProviderError {
     BinaryNotFound { binary_name: String },
 }
 
+impl ProviderError {
+    /// Whether this error is permanent and the model should not be retried.
+    ///
+    /// Permanent errors: missing credentials, binary not found, process failures
+    /// that indicate invalid models or auth issues.
+    /// Transient errors: timeouts, idle timeouts, JSON parse failures.
+    #[must_use]
+    pub fn is_permanent(&self) -> bool {
+        matches!(
+            self,
+            Self::MissingCredential { .. }
+                | Self::BinaryNotFound { .. }
+                | Self::ProcessFailed { .. }
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
