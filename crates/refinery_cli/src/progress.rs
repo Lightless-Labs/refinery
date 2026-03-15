@@ -218,6 +218,181 @@ impl ProgressDisplay {
     fn clone_shared(&self) -> Self { Self { s: self.s.clone(), t: self.t.clone(), hidden: self.hidden } }
 }
 
+// ── test UI ──
+
+/// Run a mock UI scenario without API calls.
+pub fn run_test_ui(scenario: &str) -> std::process::ExitCode {
+    let d = ProgressDisplay::new(false);
+    let tick = d.start_tick();
+    let models = vec![
+        ModelId::from_parts("claude-code", "claude-opus-4-6"),
+        ModelId::from_parts("codex-cli", "gpt-5.4"),
+        ModelId::from_parts("gemini-cli", "gemini-3.1-pro-preview"),
+    ];
+
+    match scenario {
+        "propose" => mock_propose(&d, &models),
+        "evaluate" => { mock_propose(&d, &models); mock_evaluate(&d, &models); }
+        "converge" => { mock_propose(&d, &models); mock_evaluate(&d, &models); mock_converge(&d, &models); }
+        "multi-round" => mock_multi_round(&d, &models),
+        "fail" => mock_with_failures(&d),
+        _ => {
+            eprintln!("Unknown scenario: {scenario}");
+            eprintln!("Available: propose, evaluate, converge, multi-round, fail");
+            return std::process::ExitCode::from(1);
+        }
+    }
+
+    if let Some(h) = tick { h.abort(); }
+    d.finish();
+    std::process::ExitCode::SUCCESS
+}
+
+fn sleep(ms: u64) { std::thread::sleep(Duration::from_millis(ms)); }
+
+fn mock_propose(d: &ProgressDisplay, models: &[ModelId]) {
+    d.round_started(1, 5);
+    d.phase_started("propose", models);
+    sleep(1000);
+    for (i, m) in models.iter().enumerate() {
+        d.model_output(m, (i + 1) * 5, Duration::from_secs((i + 1) as u64 * 3));
+        sleep(500);
+    }
+    d.model_proposed(&models[1], 1, "42.");
+    sleep(300);
+    d.model_proposed(&models[0], 39, "42 — as computed by Deep Thought in Douglas Adams' *The Hitc...");
+    sleep(500);
+    d.model_proposed(&models[2], 50, "The answer to life, the Universe, and everything is **42**. ...");
+    sleep(500);
+}
+
+fn mock_evaluate(d: &ProgressDisplay, models: &[ModelId]) {
+    d.phase_started("evaluate", models);
+    sleep(800);
+    let pairs = [
+        (0, 1, 9.0, "This is a strong answer: accurate, clear..."),
+        (0, 2, 8.0, "This answer provides the correct cultural..."),
+        (1, 0, 9.0, "Strong answer with the right reference..."),
+        (1, 2, 8.0, "Good coverage of the source material..."),
+        (2, 0, 10.0, "Perfectly addresses the cultural reference..."),
+        (2, 1, 8.0, "Accurate and appropriately terse..."),
+    ];
+    for (r, e, sc, pv) in pairs {
+        sleep(400);
+        d.evaluation_completed(&models[r], &models[e], sc, pv);
+    }
+    sleep(300);
+}
+
+fn mock_converge(d: &ProgressDisplay, models: &[ModelId]) {
+    d.convergence_check(false, Some(&models[0]), 9.5, 8.0, 1, 2);
+    sleep(2000);
+}
+
+fn mock_multi_round(d: &ProgressDisplay, models: &[ModelId]) {
+    // Round 1
+    mock_propose(d, models);
+    mock_evaluate(d, models);
+    d.convergence_check(false, Some(&models[0]), 9.5, 8.0, 1, 2);
+    sleep(2000);
+
+    // Round 2
+    d.round_started(2, 5);
+    d.phase_started("propose", models);
+    sleep(500);
+    d.model_proposed(&models[0], 73, "42 — the supercomputer Deep Thought...");
+    sleep(300);
+    d.model_proposed(&models[1], 11, "42, according to Douglas Adams...");
+    sleep(400);
+    d.model_proposed(&models[2], 81, "The answer is **42**, from The Hitchhiker's Guide...");
+    sleep(300);
+
+    d.phase_started("evaluate", models);
+    sleep(300);
+    let pairs = [
+        (0, 1, 9.0), (0, 2, 9.0), (1, 0, 9.0),
+        (1, 2, 9.0), (2, 0, 10.0), (2, 1, 9.0),
+    ];
+    for (r, e, sc) in pairs {
+        sleep(200);
+        d.evaluation_completed(&models[r], &models[e], sc, "Well-structured answer...");
+    }
+    sleep(200);
+    d.convergence_check(true, Some(&models[0]), 9.5, 8.0, 2, 2);
+    sleep(3000);
+}
+
+fn mock_with_failures(d: &ProgressDisplay) {
+    let models = vec![
+        ModelId::from_parts("claude-code", "hello"),
+        ModelId::from_parts("codex-cli", "haha"),
+        ModelId::from_parts("gemini-cli", "gemini-3.1-pro-preview"),
+        ModelId::from_parts("opencode", "minimax-coding-plan/MiniMax-M2.5"),
+        ModelId::from_parts("opencode", "zai-coding-plan/glm-5"),
+    ];
+
+    d.round_started(1, 5);
+    d.phase_started("propose", &models);
+    sleep(800);
+    d.model_propose_failed(&models[0], "model claude-code/hello process failed: There's an issue with the selected model (hello).");
+    sleep(200);
+    d.model_propose_failed(&models[1], "model codex-cli/haha process failed: The 'haha' model is not supported.");
+    sleep(500);
+    d.model_proposed(&models[2], 42, "The answer to life, the Universe, and everything is **42**.");
+    sleep(300);
+    d.model_proposed(&models[3], 1, "42");
+    sleep(400);
+    d.model_proposed(&models[4], 1, "42");
+    sleep(500);
+
+    d.phase_started("evaluate", &models);
+    sleep(300);
+    d.evaluation_completed(&models[2], &models[3], 8.0, "Accurate and concise...");
+    sleep(200);
+    d.evaluation_completed(&models[2], &models[4], 8.0, "Correct reference...");
+    sleep(200);
+    d.evaluation_completed(&models[3], &models[2], 9.0, "Well-structured...");
+    sleep(200);
+    d.evaluation_completed(&models[3], &models[4], 7.0, "Accurate but brief...");
+    sleep(200);
+    d.evaluation_completed(&models[4], &models[2], 9.0, "Strong answer...");
+    sleep(200);
+    d.evaluation_completed(&models[4], &models[3], 8.0, "Good coverage...");
+    sleep(500);
+
+    d.convergence_check(false, Some(&models[2]), 8.5, 8.0, 1, 2);
+    sleep(2000);
+
+    // Round 2 — dropped models should not appear
+    d.round_started(2, 5);
+    d.phase_started("propose", &models);
+    sleep(500);
+    d.model_proposed(&models[2], 81, "The answer is 42, from The Hitchhiker's Guide...");
+    sleep(300);
+    d.model_proposed(&models[3], 26, "42 — Deep Thought's answer...");
+    sleep(300);
+    d.model_proposed(&models[4], 30, "42, from Douglas Adams...");
+    sleep(500);
+
+    d.phase_started("evaluate", &models);
+    sleep(200);
+    d.evaluation_completed(&models[2], &models[3], 9.0, "Improved answer...");
+    sleep(200);
+    d.evaluation_completed(&models[2], &models[4], 9.0, "Better context...");
+    sleep(200);
+    d.evaluation_completed(&models[3], &models[2], 10.0, "Excellent...");
+    sleep(200);
+    d.evaluation_completed(&models[3], &models[4], 8.0, "Good...");
+    sleep(200);
+    d.evaluation_completed(&models[4], &models[2], 10.0, "Perfect...");
+    sleep(200);
+    d.evaluation_completed(&models[4], &models[3], 9.0, "Strong...");
+    sleep(300);
+
+    d.convergence_check(true, Some(&models[2]), 9.5, 8.0, 2, 2);
+    sleep(3000);
+}
+
 // ── frame builder ──
 
 #[allow(clippy::cast_possible_truncation)]
