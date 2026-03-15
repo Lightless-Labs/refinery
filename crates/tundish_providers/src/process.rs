@@ -449,21 +449,30 @@ pub fn extract_gemini_response(json_text: &str) -> Result<String, ProviderError>
 ///
 /// When `--json-schema` is used, returns `structured_output` serialized as JSON.
 /// Otherwise, falls back to the `result` text field.
-fn extract_from_result_event(event: &serde_json::Value) -> Option<String> {
+fn extract_from_result_event(event: &serde_json::Value) -> Result<Option<String>, String> {
     if event.get("type").and_then(|t| t.as_str()) != Some("result") {
-        return None;
+        return Ok(None);
+    }
+    // Check is_error first — claude returns errors in the result field
+    // (e.g. invalid model: "There's an issue with the selected model...")
+    if event.get("is_error").and_then(serde_json::Value::as_bool) == Some(true) {
+        let msg = event
+            .get("result")
+            .and_then(|r| r.as_str())
+            .unwrap_or("unknown error");
+        return Err(msg.to_string());
     }
     // Return structured_output as a JSON string (caller parses what they need)
     if let Some(so) = event.get("structured_output") {
         if !so.is_null() {
-            return Some(so.to_string());
+            return Ok(Some(so.to_string()));
         }
     }
-    event
+    Ok(event
         .get("result")
         .and_then(|r| r.as_str())
         .filter(|r| !r.is_empty())
-        .map(String::from)
+        .map(String::from))
 }
 
 /// Extract the response from Claude's `--output-format stream-json` + `--json-schema` output.
@@ -486,8 +495,16 @@ pub fn extract_claude_response(output: &str) -> Result<String, ProviderError> {
         let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
-        if let Some(answer) = extract_from_result_event(&parsed) {
-            return Ok(answer);
+        match extract_from_result_event(&parsed) {
+            Ok(Some(answer)) => return Ok(answer),
+            Ok(None) => {},
+            Err(msg) => {
+                return Err(ProviderError::ProcessFailed {
+                    model,
+                    message: msg,
+                    exit_code: None,
+                })
+            }
         }
     }
 
@@ -499,8 +516,16 @@ pub fn extract_claude_response(output: &str) -> Result<String, ProviderError> {
             vec![&parsed]
         };
         for event in events.iter().rev() {
-            if let Some(answer) = extract_from_result_event(event) {
-                return Ok(answer);
+            match extract_from_result_event(event) {
+                Ok(Some(answer)) => return Ok(answer),
+                Ok(None) => {},
+                Err(msg) => {
+                    return Err(ProviderError::ProcessFailed {
+                        model,
+                        message: msg,
+                        exit_code: None,
+                    })
+                }
             }
         }
     }
