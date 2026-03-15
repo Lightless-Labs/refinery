@@ -122,6 +122,7 @@ impl Engine {
                 single_model_elapsed: Some(elapsed),
                 progress: self.progress.clone(),
                 model_histories: HashMap::new(),
+                permanently_dropped: Vec::new(),
             });
         }
 
@@ -142,6 +143,7 @@ impl Engine {
             single_model_elapsed: None,
             progress: self.progress.clone(),
             model_histories: HashMap::new(),
+            permanently_dropped: Vec::new(),
         })
     }
 }
@@ -165,6 +167,8 @@ pub struct Session<'a> {
     progress: Option<ProgressFn>,
     /// Per-model trajectory for history-aware proposals in round N>1.
     model_histories: HashMap<ModelId, RoundHistory>,
+    /// Models that failed in a previous round — excluded from subsequent rounds.
+    permanently_dropped: Vec<ModelId>,
 }
 
 impl Session<'_> {
@@ -213,9 +217,12 @@ impl Session<'_> {
             total: self.config.max_rounds,
         });
 
-        // Apply model drops from overrides
+        // Apply model drops: overrides + permanently failed models
         let mut active_providers = self.providers.clone();
         for drop_id in &overrides.drop_models {
+            active_providers.retain(|p| p.model_id() != drop_id);
+        }
+        for drop_id in &self.permanently_dropped {
             active_providers.retain(|p| p.model_id() != drop_id);
         }
 
@@ -287,6 +294,13 @@ impl Session<'_> {
 
         let mut call_count =
             u32::try_from(proposal_set.proposals.len() + proposal_set.dropped.len()).unwrap_or(0);
+
+        // Track failed models so they're excluded from future rounds
+        for (model_id, _) in &proposal_set.dropped {
+            if !self.permanently_dropped.contains(model_id) {
+                self.permanently_dropped.push(model_id.clone());
+            }
+        }
 
         // Check if enough models produced proposals
         if proposal_set.proposals.len() < 2 {
