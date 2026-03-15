@@ -216,7 +216,10 @@ impl ProgressDisplay {
                 return;
             }
             let mut s = inner.lock().unwrap();
-            if s.label.as_deref().is_none_or(|l| l.starts_with(&model.to_string())) {
+            if s.label
+                .as_deref()
+                .is_none_or(|l| l.starts_with(&model.to_string()))
+            {
                 s.label = Some(format!("{model} — {lines} lines, {}s", elapsed.as_secs()));
             }
         })

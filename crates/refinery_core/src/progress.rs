@@ -56,10 +56,7 @@ pub type ProgressFn = Arc<dyn Fn(ProgressEvent) + Send + Sync>;
 /// Collapses newlines into spaces so the preview is always single-line.
 #[must_use]
 pub fn preview(text: &str, max_chars: usize) -> String {
-    let collapsed: String = text
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let collapsed: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let trimmed: String = collapsed.chars().take(max_chars).collect();
     if collapsed.chars().count() > max_chars {
         format!("{trimmed}...")
