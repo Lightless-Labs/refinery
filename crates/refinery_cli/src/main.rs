@@ -184,6 +184,11 @@ async fn async_main() -> ExitCode {
         .with_writer(std::io::stderr)
         .init();
 
+    // UI test mode: run mock scenarios without API calls
+    if let Some(ref scenario) = cli.test_ui {
+        return progress::run_test_ui(scenario);
+    }
+
     // Resolve prompt text from positional arg or stdin
     let prompt_text: Option<String> = match cli.prompt.as_deref() {
         Some("-") => {
@@ -281,11 +286,6 @@ async fn async_main() -> ExitCode {
             );
         }
         return ExitCode::SUCCESS;
-    }
-
-    // UI test mode: run mock scenarios without API calls
-    if let Some(ref scenario) = cli.test_ui {
-        return progress::run_test_ui(scenario);
     }
 
     // Build providers
