@@ -225,11 +225,36 @@ pub async fn spawn_cli(
             let stderr = stderr_task.await.unwrap_or_default();
 
             if !status.success() {
-                let message = if stderr.is_empty() {
-                    stdout.as_str()
+                let raw = if stderr.is_empty() {
+                    &stdout
                 } else {
-                    stderr.as_str()
+                    &stderr
                 };
+                // Extract a meaningful error message from the raw output.
+                // Try structured JSONL error events first (codex puts errors
+                // in stdout), then fall back to the first non-noise text line.
+                let message = extract_error_from_jsonl(raw)
+                    .or_else(|| {
+                        raw.lines()
+                            .map(str::trim)
+                            .find(|l| {
+                                !l.is_empty()
+                                    && !l.starts_with('{')
+                                    && !l.starts_with("at ")
+                                    && !l.contains("cached credentials")
+                                    && !l.contains("Loaded cached")
+                                    && !l.starts_with("Warning:")
+                            })
+                            .map(String::from)
+                    })
+                    .unwrap_or_else(|| {
+                        raw.lines()
+                            .map(str::trim)
+                            .find(|l| !l.is_empty())
+                            .unwrap_or("process failed")
+                            .to_string()
+                    });
+                let message = message.as_str();
                 warn!(
                     model = %model,
                     exit_code = ?status.code(),
@@ -252,6 +277,44 @@ pub async fn spawn_cli(
             elapsed: max_timeout,
         }),
     }
+}
+
+/// Scan JSONL for error/failure events and extract a clean error message.
+///
+/// Checks for codex-style `{"type":"error"}` and `{"type":"turn.failed"}` events,
+/// as well as opencode-style `{"type":"error","error":{...}}` events.
+fn extract_error_from_jsonl(raw: &str) -> Option<String> {
+    for line in raw.lines() {
+        let line = line.trim();
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let event_type = parsed.get("type").and_then(|t| t.as_str()).unwrap_or("");
+        if event_type != "error" && event_type != "turn.failed" {
+            continue;
+        }
+        // Try nested paths: .message, .error.message, .error.data.message
+        let msg = parsed
+            .get("message")
+            .or_else(|| parsed.get("error").and_then(|e| e.get("message")))
+            .or_else(|| {
+                parsed
+                    .get("error")
+                    .and_then(|e| e.get("data"))
+                    .and_then(|d| d.get("message"))
+            })
+            .and_then(|m| m.as_str());
+
+        if let Some(msg) = msg {
+            // Codex sometimes JSON-encodes the detail: "{\"detail\":\"...\"}"
+            let clean = serde_json::from_str::<serde_json::Value>(msg)
+                .ok()
+                .and_then(|v| v.get("detail").and_then(|d| d.as_str()).map(String::from))
+                .unwrap_or_else(|| msg.to_string());
+            return Some(clean);
+        }
+    }
+    None
 }
 
 /// Extract system and user prompts from a message slice.
@@ -295,6 +358,25 @@ pub fn extract_codex_response(jsonl: &str) -> Result<String, ProviderError> {
             continue;
         };
         let event_type = parsed.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+        // Surface error events (e.g. unsupported model)
+        if event_type == "error" || event_type == "turn.failed" {
+            let message = parsed
+                .get("message")
+                .or_else(|| parsed.get("error").and_then(|e| e.get("message")))
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown error");
+            // Try to parse JSON-encoded detail string
+            let clean = serde_json::from_str::<serde_json::Value>(message)
+                .ok()
+                .and_then(|v| v.get("detail").and_then(|d| d.as_str()).map(String::from))
+                .unwrap_or_else(|| message.to_string());
+            return Err(ProviderError::ProcessFailed {
+                model,
+                message: clean,
+                exit_code: None,
+            });
+        }
 
         // Extract text from turn.completed (top-level) or item.completed (nested in item)
         let text = match event_type {

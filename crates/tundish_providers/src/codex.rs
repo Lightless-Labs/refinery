@@ -166,7 +166,6 @@ impl ModelProvider for CodexProvider {
             let _ = std::fs::remove_file(path);
         }
 
-        // Codex outputs JSONL; extract answer from turn.completed
         process::extract_codex_response(&result?)
     }
 
