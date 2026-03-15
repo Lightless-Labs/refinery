@@ -164,18 +164,22 @@ impl ProgressDisplay {
         let mut inner = self.inner.lock().unwrap();
         inner.proposed_models.push(model.clone());
         let word_label = if word_count == 1 { "word" } else { "words" };
-        if let Some(pb) = inner.bars.get(&model.to_string()) {
-            pb.finish_with_message(format!(
-                "\x1b[32m✓\x1b[0m {model} proposed ({word_count} {word_label}) — \"{preview}\""
-            ));
+        let key = model.to_string();
+        // Remove the spinner and print completion as scrollback text.
+        // Using println instead of finish_with_message prevents the line from
+        // being part of indicatif's managed bar set (which would misorder it
+        // if evaluate spinners are already active).
+        if let Some(pb) = inner.bars.remove(&key) {
+            self.multi.remove(&pb);
         }
+        let _ = self.multi.println(format!(
+            "    \x1b[32m✓\x1b[0m {model} proposed ({word_count} {word_label}) — \"{preview}\""
+        ));
     }
 
     /// Mark a model's proposal as failed.
     pub fn model_propose_failed(&self, model: &ModelId, error: &str) {
         let mut inner = self.inner.lock().unwrap();
-        // Track permanently failed models (invalid model, auth, binary not found).
-        // Transient errors (timeout) are not tracked — model is retried next round.
         let is_permanent = error.contains("process failed")
             || error.contains("not found")
             || error.contains("not supported")
@@ -183,9 +187,13 @@ impl ProgressDisplay {
         if is_permanent && !inner.dropped_models.contains(model) {
             inner.dropped_models.push(model.clone());
         }
-        if let Some(pb) = inner.bars.get(&model.to_string()) {
-            pb.finish_with_message(format!("\x1b[31m✗\x1b[0m {model} failed — {error}"));
+        let key = model.to_string();
+        if let Some(pb) = inner.bars.remove(&key) {
+            self.multi.remove(&pb);
         }
+        let _ = self
+            .multi
+            .println(format!("    \x1b[31m✗\x1b[0m {model} failed — {error}"));
     }
 
     /// Mark an evaluation as completed. Creates spinner lazily if needed.
@@ -205,9 +213,11 @@ impl ProgressDisplay {
             .push(score);
 
         let key = format!("{reviewer} → {reviewee}");
-        let pb = Self::get_or_create_bar(&mut inner, &self.multi, &key);
-        pb.finish_with_message(format!(
-            "\x1b[32m✓\x1b[0m {reviewer} → {reviewee}: {score:.1} — \"{preview}\""
+        if let Some(pb) = inner.bars.remove(&key) {
+            self.multi.remove(&pb);
+        }
+        let _ = self.multi.println(format!(
+            "    \x1b[32m✓\x1b[0m {reviewer} → {reviewee}: {score:.1} — \"{preview}\""
         ));
     }
 
@@ -216,9 +226,11 @@ impl ProgressDisplay {
     pub fn evaluation_failed(&self, reviewer: &ModelId, reviewee: &ModelId, error: &str) {
         let mut inner = self.inner.lock().unwrap();
         let key = format!("{reviewer} → {reviewee}");
-        let pb = Self::get_or_create_bar(&mut inner, &self.multi, &key);
-        pb.finish_with_message(format!(
-            "\x1b[31m✗\x1b[0m {reviewer} → {reviewee} failed — {error}"
+        if let Some(pb) = inner.bars.remove(&key) {
+            self.multi.remove(&pb);
+        }
+        let _ = self.multi.println(format!(
+            "    \x1b[31m✗\x1b[0m {reviewer} → {reviewee} failed — {error}"
         ));
     }
 
