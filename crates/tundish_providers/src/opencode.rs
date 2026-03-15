@@ -147,7 +147,30 @@ pub fn extract_opencode_response(jsonl: &str) -> Result<String, ProviderError> {
             continue;
         };
 
-        if parsed.get("type").and_then(|t| t.as_str()) == Some("text") {
+        let event_type = parsed.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+        // Surface error events (e.g. "Model not found", auth failures)
+        if event_type == "error" {
+            let message = parsed
+                .get("error")
+                .and_then(|e| e.get("data"))
+                .and_then(|d| d.get("message"))
+                .and_then(|m| m.as_str())
+                .or_else(|| {
+                    parsed
+                        .get("error")
+                        .and_then(|e| e.get("message"))
+                        .and_then(|m| m.as_str())
+                })
+                .unwrap_or("unknown error");
+            return Err(ProviderError::ProcessFailed {
+                model,
+                message: message.to_string(),
+                exit_code: None,
+            });
+        }
+
+        if event_type == "text" {
             if let Some(text) = parsed
                 .get("part")
                 .and_then(|p| p.get("text"))
@@ -196,5 +219,12 @@ mod tests {
         let jsonl = r#"{"type":"step_start","part":{}}
 {"type":"step_finish","part":{}}"#;
         assert!(extract_opencode_response(jsonl).is_err());
+    }
+
+    #[test]
+    fn extract_error_event() {
+        let jsonl = r#"{"type":"error","error":{"name":"UnknownError","data":{"message":"Model not found: opencode/fake-model."}}}"#;
+        let err = extract_opencode_response(jsonl).unwrap_err();
+        assert!(err.to_string().contains("Model not found"));
     }
 }
