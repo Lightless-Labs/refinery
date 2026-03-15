@@ -178,6 +178,17 @@ pub async fn spawn_cli(
                     if let Some(ref cb) = progress {
                         cb(&model_clone, line_count, start.elapsed());
                     }
+
+                    // Early abort: detect fatal errors in JSONL stream
+                    // (e.g. claude with --json-schema + invalid model hangs
+                    // instead of exiting, but emits an error event early)
+                    if let Some(msg) = detect_fatal_stream_error(line_buf.trim()) {
+                        return Err(ProviderError::ProcessFailed {
+                            model: model_clone.clone(),
+                            message: msg,
+                            exit_code: None,
+                        });
+                    }
                     collected.push_str(&line_buf);
                     if collected.len() > MAX_RESPONSE_SIZE {
                         return Err(ProviderError::ResponseTooLarge {
@@ -277,6 +288,51 @@ pub async fn spawn_cli(
             elapsed: max_timeout,
         }),
     }
+}
+
+/// Check a single JSONL line for fatal errors that should abort streaming.
+///
+/// Detects:
+/// - Claude: `{"type":"assistant",...,"error":"invalid_request"}`
+/// - Claude: `{"type":"result","is_error":true,...}`
+/// - Codex: `{"type":"error","message":"..."}`
+/// - opencode: `{"type":"error","error":{"data":{"message":"..."}}}`
+fn detect_fatal_stream_error(line: &str) -> Option<String> {
+    let parsed: serde_json::Value = serde_json::from_str(line).ok()?;
+    let event_type = parsed.get("type").and_then(|t| t.as_str())?;
+
+    // Claude assistant event with error field
+    if event_type == "assistant" {
+        if let Some(err) = parsed.get("error").and_then(|e| e.as_str()) {
+            if err == "invalid_request" || err == "authentication_error" {
+                let msg = parsed
+                    .get("message")
+                    .and_then(|m| m.get("content"))
+                    .and_then(|c| c.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|e| e.get("text"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or(err);
+                return Some(msg.to_string());
+            }
+        }
+    }
+
+    // Claude result with is_error
+    if event_type == "result" && parsed.get("is_error").and_then(serde_json::Value::as_bool) == Some(true) {
+        let msg = parsed
+            .get("result")
+            .and_then(|r| r.as_str())
+            .unwrap_or("unknown error");
+        return Some(msg.to_string());
+    }
+
+    // Generic error events (codex, opencode)
+    if event_type == "error" || event_type == "turn.failed" {
+        return extract_error_from_jsonl(line);
+    }
+
+    None
 }
 
 /// Scan JSONL for error/failure events and extract a clean error message.
