@@ -30,9 +30,6 @@ struct Inner {
     /// Finished bars from current round (propose/evaluate results, headers).
     /// Cleared on new round start.
     round_bars: Vec<ProgressBar>,
-    /// Score table + convergence status bars. Persist across rounds until
-    /// the next `convergence_check` replaces them.
-    table_bars: Vec<ProgressBar>,
     /// Per-round mean scores accumulated across all rounds.
     round_scores: Vec<HashMap<String, f64>>,
     /// Per-model evaluation scores for the current round.
@@ -58,7 +55,6 @@ impl ProgressDisplay {
             inner: Arc::new(Mutex::new(Inner {
                 bars: HashMap::new(),
                 round_bars: Vec::new(),
-                table_bars: Vec::new(),
                 round_scores: Vec::new(),
                 current_evals: HashMap::new(),
                 current_phase: String::new(),
@@ -82,11 +78,7 @@ impl ProgressDisplay {
         inner.current_evals.clear();
         inner.proposed_models.clear();
 
-        // Round header as a finished bar (keeps correct position in indicatif)
-        let header = self.multi.add(ProgressBar::new_spinner());
-        header.set_style(ProgressStyle::with_template("\n  {msg}").unwrap());
-        header.finish_with_message(format!("Round {round}/{total}"));
-        inner.round_bars.push(header);
+        let _ = self.multi.println(format!("\n  Round {round}/{total}"));
     }
 
     /// New phase: finish (but keep visible) any previous bars, print phase header.
@@ -106,12 +98,7 @@ impl ProgressDisplay {
 
         inner.current_phase = phase.to_string();
 
-        // Add phase header as a finished progress bar so it appears in the
-        // correct position (after previous phase bars, before new spinners).
-        let header = self.multi.add(ProgressBar::new_spinner());
-        header.set_style(ProgressStyle::with_template("  {msg}").unwrap());
-        header.finish_with_message(format!("── {phase} ──"));
-        inner.round_bars.push(header);
+        let _ = self.multi.println(format!("  ── {phase} ──"));
 
         let style = spinner_style();
         if phase == "propose" {
@@ -259,29 +246,18 @@ impl ProgressDisplay {
         let eval_bars: Vec<ProgressBar> = inner.bars.drain().map(|(_, pb)| pb).collect();
         inner.round_bars.extend(eval_bars);
 
-        // Clear previous score table bars
-        for pb in &inner.table_bars {
-            self.multi.remove(pb);
-        }
-        inner.table_bars.clear();
-
         let winner_name = winner.map(std::string::ToString::to_string);
 
-        // Convergence status as a finished bar
-        let msg = if converged {
+        if converged {
             let w = winner_name.as_deref().unwrap_or("?");
-            format!(
+            let _ = self.multi.println(format!(
                 "  \x1b[32m→ Converged!\x1b[0m Winner: {w} ({best_score:.1} ≥ {threshold:.1}, stable {stable_rounds}/{required_stable})"
-            )
+            ));
         } else {
-            format!(
+            let _ = self.multi.println(format!(
                 "  → Not converged ({best_score:.1}/{threshold:.1}, stable {stable_rounds}/{required_stable})"
-            )
-        };
-        let status_bar = self.multi.add(ProgressBar::new_spinner());
-        status_bar.set_style(ProgressStyle::with_template("{msg}").unwrap());
-        status_bar.finish_with_message(msg);
-        inner.table_bars.push(status_bar);
+            ));
+        }
 
         // Finalize current round means into history
         if !inner.current_evals.is_empty() {
@@ -294,15 +270,10 @@ impl ProgressDisplay {
             inner.round_scores.push(means);
         }
 
-        // Render score table as finished bars (one per line)
+        // Render score table
         if !inner.round_scores.is_empty() {
             let table = render_score_table(&inner.round_scores, winner_name.as_deref());
-            for line in table.lines() {
-                let line_bar = self.multi.add(ProgressBar::new_spinner());
-                line_bar.set_style(ProgressStyle::with_template("{msg}").unwrap());
-                line_bar.finish_with_message(line.to_string());
-                inner.table_bars.push(line_bar);
-            }
+            let _ = self.multi.println(table);
         }
     }
 
@@ -313,7 +284,6 @@ impl ProgressDisplay {
             .bars
             .values()
             .chain(inner.round_bars.iter())
-            .chain(inner.table_bars.iter())
         {
             self.multi.remove(pb);
         }
