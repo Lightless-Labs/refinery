@@ -29,7 +29,7 @@ struct Cli {
     idle_timeout: u64,
 
     /// Tools to allow (e.g. `web_search`, `code_execution`).
-    #[arg(long, value_delimiter = ',', default_value = "")]
+    #[arg(long, value_delimiter = ',')]
     allow_tools: Vec<String>,
 
     /// Enable verbose logging.

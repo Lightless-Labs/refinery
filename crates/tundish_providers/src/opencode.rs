@@ -121,7 +121,7 @@ impl ModelProvider for OpenCodeProvider {
         )
         .await?;
 
-        extract_opencode_response(&output)
+        extract_opencode_response(&output, &self.model_id)
     }
 
     fn model_id(&self) -> &ModelId {
@@ -132,8 +132,8 @@ impl ModelProvider for OpenCodeProvider {
 /// Extract the response text from `OpenCode`'s JSONL output.
 ///
 /// Scans for `{"type":"text"}` events and concatenates their `part.text` fields.
-pub fn extract_opencode_response(jsonl: &str) -> Result<String, ProviderError> {
-    let model = ModelId::from_parts("opencode", "unknown");
+pub fn extract_opencode_response(jsonl: &str, model_id: &ModelId) -> Result<String, ProviderError> {
+    let model = model_id.clone();
     let preview: String = jsonl.chars().take(200).collect();
 
     let mut texts = Vec::new();
@@ -200,7 +200,8 @@ mod tests {
         let jsonl = r#"{"type":"step_start","timestamp":1234,"sessionID":"s1","part":{"type":"step-start"}}
 {"type":"text","timestamp":1235,"sessionID":"s1","part":{"type":"text","text":"Hello! How can I help?"}}
 {"type":"step_finish","timestamp":1236,"sessionID":"s1","part":{"type":"step-finish","reason":"stop"}}"#;
-        let result = extract_opencode_response(jsonl).unwrap();
+        let result =
+            extract_opencode_response(jsonl, &ModelId::from_parts("opencode", "test")).unwrap();
         assert_eq!(result, "Hello! How can I help?");
     }
 
@@ -210,7 +211,8 @@ mod tests {
 {"type":"text","part":{"text":"Part 1. "}}
 {"type":"text","part":{"text":"Part 2."}}
 {"type":"step_finish","part":{}}"#;
-        let result = extract_opencode_response(jsonl).unwrap();
+        let result =
+            extract_opencode_response(jsonl, &ModelId::from_parts("opencode", "test")).unwrap();
         assert_eq!(result, "Part 1. Part 2.");
     }
 
@@ -218,13 +220,16 @@ mod tests {
     fn extract_no_text_event() {
         let jsonl = r#"{"type":"step_start","part":{}}
 {"type":"step_finish","part":{}}"#;
-        assert!(extract_opencode_response(jsonl).is_err());
+        assert!(
+            extract_opencode_response(jsonl, &ModelId::from_parts("opencode", "test")).is_err()
+        );
     }
 
     #[test]
     fn extract_error_event() {
         let jsonl = r#"{"type":"error","error":{"name":"UnknownError","data":{"message":"Model not found: opencode/fake-model."}}}"#;
-        let err = extract_opencode_response(jsonl).unwrap_err();
+        let err =
+            extract_opencode_response(jsonl, &ModelId::from_parts("opencode", "test")).unwrap_err();
         assert!(err.to_string().contains("Model not found"));
     }
 }
