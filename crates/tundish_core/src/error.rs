@@ -50,12 +50,18 @@ impl ProviderError {
     /// Transient errors: timeouts, idle timeouts, JSON parse failures.
     #[must_use]
     pub fn is_permanent(&self) -> bool {
-        matches!(
-            self,
-            Self::MissingCredential { .. }
-                | Self::BinaryNotFound { .. }
-                | Self::ProcessFailed { .. }
-        )
+        match self {
+            Self::MissingCredential { .. } | Self::BinaryNotFound { .. } => true,
+            Self::ProcessFailed { message, .. } => {
+                // Only permanent if the message indicates a non-retryable error
+                message.contains("not found")
+                    || message.contains("not supported")
+                    || message.contains("not exist")
+                    || message.contains("issue with the selected model")
+                    || message.contains("Authentication")
+            }
+            _ => false,
+        }
     }
 }
 

@@ -284,7 +284,7 @@ async fn async_main() -> ExitCode {
     let timeout = Duration::from_secs(cli.timeout);
     let idle_timeout = Duration::from_secs(cli.idle_timeout);
 
-    // Progress display: per-model spinners via indicatif, score tables via comfy-table.
+    // Progress display: single-line spinner + eprintln events.
     // Hidden when verbose/debug mode or non-TTY (piped output).
     let hidden = cli.verbose || cli.debug || !std::io::stderr().is_terminal();
     let display = progress::ProgressDisplay::new(hidden);
