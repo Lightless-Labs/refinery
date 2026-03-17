@@ -27,7 +27,7 @@ Optimize for agreement. Return the winner (or no winner if max rounds exceeded).
 
 **Selection model:** Reddit "Top/Best" — highest consensus score with stability requirement.
 
-**Specific flags:** `--threshold`, `--max-rounds`, `--stability-rounds`
+**Specific flags:** `--threshold`, `--max-rounds` (stability_rounds is hardcoded to 2 for now)
 
 ### synthesize (future)
 Like converge, but after reaching consensus/max rounds, each model generates a synthesis of all answers scoring above threshold. Models then review each other's syntheses separately, score them, and return the best.
@@ -79,7 +79,7 @@ Find recurring themes AND outliers across rounds. Like brainstorm but focused on
 - `--dry-run` — cost estimate
 
 **Per-verb flags:**
-- `converge`: `--threshold`, `--max-rounds`, `--stability-rounds`
+- `converge`: `--threshold`, `--max-rounds`
 - `synthesize`: `--synthesis-threshold`, `--max-rounds`
 - `brainstorm`: `--panel-size`, `--diversity-threshold`, `--max-rounds`
 
