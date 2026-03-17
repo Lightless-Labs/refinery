@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use serde::Serialize;
 use tracing::info;
 
@@ -15,14 +15,30 @@ use tundish_core::ModelId;
 use refinery_core::types::{ConvergenceStatus, RoundOutcome};
 use refinery_core::{EngineConfig, ModelProvider};
 
-/// Iterative multi-model consensus engine.
+/// Multi-model AI consensus engine.
 ///
-/// Given a prompt, N models independently produce answers, cross-review each other's work,
-/// score all answers — repeating until a configurable convergence criterion is met.
+/// Dispatch prompts to multiple AI models and apply different strategies:
+/// converge (consensus), synthesize, brainstorm, and more.
 #[derive(Parser, Debug)]
 #[command(name = "refinery", version, about)]
 struct Cli {
-    /// The prompt to reach consensus on (or - for stdin, max 1MB). Optional when --file is used.
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Reach consensus across multiple models.
+    ///
+    /// Each model proposes an answer, evaluates others' answers, and iterates
+    /// until a convergence threshold is met or max rounds are reached.
+    Converge(ConvergeArgs),
+}
+
+/// Shared options for all subcommands (embedded via #[command(flatten)]).
+#[derive(Parser, Debug)]
+struct SharedArgs {
+    /// The prompt (or - for stdin, max 1MB). Optional when --file is used.
     #[arg(value_name = "PROMPT")]
     prompt: Option<String>,
 
@@ -34,23 +50,15 @@ struct Cli {
     #[arg(short, long, value_delimiter = ',')]
     models: Vec<String>,
 
-    /// Score threshold for convergence [default: 8.0] (range: 1.0-10.0)
-    #[arg(short, long, default_value = "8.0")]
-    threshold: f64,
-
-    /// Maximum rounds [default: 5] (range: 1-20)
-    #[arg(short = 'r', long, default_value = "5")]
-    max_rounds: u32,
-
-    /// Hard wall-clock timeout per call in seconds [default: 1800] (range: 1-7200)
+    /// Hard wall-clock timeout per call in seconds [default: 1800]
     #[arg(long, default_value = "1800")]
     timeout: u64,
 
-    /// Idle timeout: max seconds of silence before killing a subprocess [default: 120] (range: 1-600)
+    /// Idle timeout: max seconds of silence before killing a subprocess [default: 120]
     #[arg(long, default_value = "120")]
     idle_timeout: u64,
 
-    /// Max concurrent subprocess calls [default: 0 = unlimited] (range: 0-50)
+    /// Max concurrent subprocess calls [default: 0 = unlimited]
     #[arg(long, default_value = "0")]
     max_concurrent: usize,
 
@@ -67,7 +75,6 @@ struct Cli {
     debug: bool,
 
     /// Tools to allow: `web_fetch`, `web_search`, `file_read`, `file_write`, `shell`.
-    /// Mapped to each provider's native tool names automatically.
     #[arg(long = "allow-tools", value_delimiter = ',')]
     allow_tools: Vec<String>,
 
@@ -78,6 +85,20 @@ struct Cli {
     /// Show estimated call count and cost, then exit
     #[arg(long)]
     dry_run: bool,
+}
+
+#[derive(Parser, Debug)]
+struct ConvergeArgs {
+    #[command(flatten)]
+    shared: SharedArgs,
+
+    /// Score threshold for convergence [default: 8.0] (range: 1.0-10.0)
+    #[arg(short, long, default_value = "8.0")]
+    threshold: f64,
+
+    /// Maximum rounds [default: 5] (range: 1-20)
+    #[arg(short = 'r', long, default_value = "5")]
+    max_rounds: u32,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -137,9 +158,6 @@ struct ErrorDetail {
 }
 
 fn main() -> ExitCode {
-    // Restore terminal sanity: a previous run (before the setsid fix) may have
-    // left ISIG disabled, which prevents Ctrl+C from generating SIGINT.
-    // This persists across commands, so we fix it on startup.
     #[cfg(unix)]
     {
         use std::os::fd::AsRawFd;
@@ -163,14 +181,22 @@ fn main() -> ExitCode {
         .block_on(async_main())
 }
 
-#[allow(clippy::too_many_lines)]
 async fn async_main() -> ExitCode {
     let cli = Cli::parse();
 
+    match cli.command {
+        Command::Converge(args) => run_converge(args).await,
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+async fn run_converge(args: ConvergeArgs) -> ExitCode {
+    let shared = &args.shared;
+
     // Set up tracing
-    let filter = if cli.debug {
+    let filter = if shared.debug {
         "debug"
-    } else if cli.verbose {
+    } else if shared.verbose {
         "info"
     } else {
         "warn"
@@ -181,8 +207,8 @@ async fn async_main() -> ExitCode {
         .with_writer(std::io::stderr)
         .init();
 
-    // Resolve prompt text from positional arg or stdin
-    let prompt_text: Option<String> = match cli.prompt.as_deref() {
+    // Resolve prompt text
+    let prompt_text: Option<String> = match shared.prompt.as_deref() {
         Some("-") => {
             let mut buf = String::new();
             let bytes_read = match std::io::stdin().take(1_000_001).read_to_string(&mut buf) {
@@ -202,19 +228,17 @@ async fn async_main() -> ExitCode {
         None => None,
     };
 
-    // At least one input source required
-    if prompt_text.is_none() && cli.files.is_empty() {
+    if prompt_text.is_none() && shared.files.is_empty() {
         eprintln!("Error: a prompt or at least one --file must be provided");
         return ExitCode::from(4);
     }
 
-    // Read and validate files (runs even during --dry-run for early validation)
     let prompt_bytes = prompt_text.as_deref().map_or(0, str::len);
     let file_budget = 1_000_000_usize.saturating_sub(prompt_bytes);
-    let file_data: Vec<(String, String)> = if cli.files.is_empty() {
+    let file_data: Vec<(String, String)> = if shared.files.is_empty() {
         Vec::new()
     } else {
-        match read_and_validate_files(&cli.files, file_budget) {
+        match read_and_validate_files(&shared.files, file_budget) {
             Ok(data) => data,
             Err(errors) => {
                 for e in &errors {
@@ -225,17 +249,16 @@ async fn async_main() -> ExitCode {
         }
     };
 
-    // Assemble the final prompt
     let nonce = refinery_core::prompts::generate_nonce();
     let prompt =
         refinery_core::prompts::assemble_file_prompt(prompt_text.as_deref(), &file_data, &nonce);
 
-    if cli.models.is_empty() {
+    if shared.models.is_empty() {
         eprintln!("Error: at least one model must be specified with --models");
         return ExitCode::from(4);
     }
 
-    let model_ids: Vec<ModelId> = match cli
+    let model_ids: Vec<ModelId> = match shared
         .models
         .iter()
         .map(|m| parse_model_spec(m))
@@ -250,11 +273,11 @@ async fn async_main() -> ExitCode {
 
     let config = match EngineConfig::new(
         model_ids.clone(),
-        cli.max_rounds,
-        cli.threshold,
+        args.max_rounds,
+        args.threshold,
         2, // stability_rounds
-        Duration::from_secs(cli.timeout),
-        cli.max_concurrent,
+        Duration::from_secs(shared.timeout),
+        shared.max_concurrent,
     ) {
         Ok(c) => c,
         Err(e) => {
@@ -263,8 +286,7 @@ async fn async_main() -> ExitCode {
         }
     };
 
-    // Dry run: show cost estimate
-    if cli.dry_run {
+    if shared.dry_run {
         let estimate = refinery_core::Engine::estimate(&config);
         println!("Dry run estimate:");
         println!("  Models: {}", estimate.model_count);
@@ -280,13 +302,10 @@ async fn async_main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // Build providers
-    let timeout = Duration::from_secs(cli.timeout);
-    let idle_timeout = Duration::from_secs(cli.idle_timeout);
+    let timeout = Duration::from_secs(shared.timeout);
+    let idle_timeout = Duration::from_secs(shared.idle_timeout);
 
-    // Progress display: single-line spinner + eprintln events.
-    // Hidden when verbose/debug mode or non-TTY (piped output).
-    let hidden = cli.verbose || cli.debug || !std::io::stderr().is_terminal();
+    let hidden = shared.verbose || shared.debug || !std::io::stderr().is_terminal();
     let display = progress::ProgressDisplay::new(hidden);
 
     let tundish_progress: Option<tundish_core::ProgressFn> = if hidden {
@@ -300,7 +319,7 @@ async fn async_main() -> ExitCode {
     for model_id in &model_ids {
         match tundish_providers::build_provider(
             model_id,
-            &cli.allow_tools,
+            &shared.allow_tools,
             timeout,
             idle_timeout,
             tundish_progress.clone(),
@@ -321,16 +340,15 @@ async fn async_main() -> ExitCode {
         Some(display.consensus_callback(model_ids.clone()))
     };
 
-    let strategy = Box::new(refinery_core::VoteThreshold::new(cli.threshold, 2));
+    let strategy = Box::new(refinery_core::VoteThreshold::new(args.threshold, 2));
     let engine =
         refinery_core::Engine::new(providers, strategy, config, consensus_progress.clone());
 
-    info!("Starting consensus run with {} models", cli.models.len());
+    info!("Starting consensus run with {} models", shared.models.len());
 
     let tick_handle = display.start_tick();
     let run_result = engine.run(&prompt).await;
 
-    // Stop tick task and finalize display
     if let Some(handle) = tick_handle {
         handle.abort();
     }
@@ -338,15 +356,14 @@ async fn async_main() -> ExitCode {
 
     match run_result {
         Ok((outcome, rounds)) => {
-            // Save per-round artifacts if --output-dir is set
-            if let Some(ref dir) = cli.output_dir {
-                let run_dir = make_run_dir(dir, cli.prompt.as_deref());
+            if let Some(ref dir) = shared.output_dir {
+                let run_dir = make_run_dir(dir, shared.prompt.as_deref());
                 if let Err(e) = save_round_artifacts(&run_dir, &rounds) {
                     eprintln!("Warning: failed to save artifacts: {e}");
                 }
             }
 
-            match cli.output_format {
+            match shared.output_format {
                 OutputFormat::Json => {
                     let status_str = match serde_json::to_value(&outcome.status) {
                         Ok(serde_json::Value::String(s)) => s,
@@ -412,7 +429,7 @@ async fn async_main() -> ExitCode {
             }
         }
         Err(e) => {
-            match cli.output_format {
+            match shared.output_format {
                 OutputFormat::Json => {
                     let err_response = ErrorResponse {
                         status: "error".to_string(),
@@ -431,6 +448,8 @@ async fn async_main() -> ExitCode {
         }
     }
 }
+
+// ── Helpers ─────────────────────────────────────────────────────────────
 
 fn read_and_validate_files(
     paths: &[PathBuf],
@@ -456,7 +475,6 @@ fn read_and_validate_files(
             continue;
         }
 
-        // Pre-read size guard to avoid allocating memory for huge files
         let file_size = usize::try_from(meta.len()).unwrap_or(usize::MAX);
         if file_size > budget {
             errors.push(format!("file '{path_str}': exceeds 1MB limit"));
@@ -493,12 +511,8 @@ fn read_and_validate_files(
     Ok(files)
 }
 
-/// Parse a CLI model spec into a `ModelId`.
-///
-/// Accepts `provider/model` or provider-only (applies default model).
 fn parse_model_spec(input: &str) -> Result<ModelId, String> {
     if input.contains('/') {
-        // Split on first slash: provider/model (model may contain slashes for opencode)
         let (provider, model) = input.split_once('/').unwrap();
         if provider.is_empty() || model.is_empty() {
             return Err(format!("Invalid model spec: '{input}'"));
@@ -521,16 +535,11 @@ fn parse_model_spec(input: &str) -> Result<ModelId, String> {
     }
 }
 
-/// Build a per-run subdirectory inside the base output dir.
-///
-/// Format: `YYYYMMDD-HHMMSS_<prompt-slug>` where the slug is the first
-/// 40 chars of the prompt, lowercased, with non-alphanumeric chars replaced by `-`.
 fn make_run_dir(base: &std::path::Path, prompt: Option<&str>) -> std::path::PathBuf {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    // Convert epoch seconds to UTC date-time components
     let (y, mo, d, h, mi, s) = epoch_to_utc(secs);
     let timestamp = format!("{y:04}{mo:02}{d:02}-{h:02}{mi:02}{s:02}");
     let slug: String = prompt
@@ -550,7 +559,6 @@ fn make_run_dir(base: &std::path::Path, prompt: Option<&str>) -> std::path::Path
     base.join(format!("{timestamp}_{slug}"))
 }
 
-/// Convert Unix epoch seconds to (year, month, day, hour, minute, second) in UTC.
 fn epoch_to_utc(epoch: u64) -> (u64, u64, u64, u64, u64, u64) {
     let s = epoch % 60;
     let mi = (epoch / 60) % 60;
@@ -605,14 +613,12 @@ fn save_round_artifacts(
         let round_dir = base_dir.join(format!("round-{}", round.round));
         std::fs::create_dir_all(&round_dir)?;
 
-        // Proposals: one file per model
         for (model_id, text) in &round.proposals.proposals {
             let safe_id = model_id.to_string().replace('/', "_");
             let path = round_dir.join(format!("propose-{safe_id}.md"));
             std::fs::write(&path, text)?;
         }
 
-        // Evaluations: one file per (evaluator, evaluatee) pair
         for ((evaluator, evaluatee), eval) in &round.evaluations.evaluations {
             let safe_evaluator = evaluator.to_string().replace('/', "_");
             let safe_evaluatee = evaluatee.to_string().replace('/', "_");

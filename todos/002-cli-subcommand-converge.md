@@ -2,6 +2,8 @@
 title: "refactor: restructure CLI into refinery converge subcommand"
 priority: high
 milestone: v0.2
+status: completed
+completed: 2026-03-17
 ---
 
 # Restructure CLI into `refinery converge` subcommand
