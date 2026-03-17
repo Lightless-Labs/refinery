@@ -18,7 +18,7 @@ Move all current behavior under `refinery converge "prompt" --models ...`. Split
 
 **Shared:** `--models`, `--timeout`, `--idle-timeout`, `--max-concurrent`, `--output-format`, `--output-dir`, `--allow-tools`, `--verbose`, `--debug`, `--dry-run`
 
-**converge-specific:** `--threshold`, `--max-rounds`, `--stability-rounds`
+**converge-specific:** `--threshold`, `--max-rounds`
 
 No backward compatibility — `refinery "prompt"` without a verb should error with usage help.
 

@@ -17,8 +17,7 @@ use refinery_core::{EngineConfig, ModelProvider};
 
 /// Multi-model AI consensus engine.
 ///
-/// Dispatch prompts to multiple AI models and apply different strategies:
-/// converge (consensus), synthesize, brainstorm, and more.
+/// Dispatch prompts to multiple AI models and apply different strategies.
 #[derive(Parser, Debug)]
 #[command(name = "refinery", version, about)]
 struct Cli {
