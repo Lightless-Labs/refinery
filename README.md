@@ -28,7 +28,7 @@ refinery_core = "0.1"
 Set up credentials for at least one provider (see [Credentials](#credentials))
 
 ```sh
-refinery "What are the three most impactful breakthroughs in physics?" \
+refinery converge "What are the three most impactful breakthroughs in physics?" \
   --models claude-code,codex-cli,gemini-cli
 ```
 
@@ -41,13 +41,13 @@ Models propose, evaluate each other, and repeat until consensus.
 Pass models as a comma-separated list using `provider/model` format
 
 ```sh
-refinery "your prompt" --models claude-code/claude-opus-4-6,gemini-cli/gemini-3.1-pro-preview
+refinery converge "your prompt" --models claude-code/claude-opus-4-6,gemini-cli/gemini-3.1-pro-preview
 ```
 
 Short aliases use each provider's default model
 
 ```sh
-refinery "your prompt" --models claude-code,codex-cli,gemini-cli
+refinery converge "your prompt" --models claude-code,codex-cli,gemini-cli
 ```
 
 Refinery dispatches prompts to locally installed and authenticated CLI tools. Install and authenticate any of the supported CLIs, then pass them as `--models`:
@@ -62,7 +62,7 @@ Refinery dispatches prompts to locally installed and authenticated CLI tools. In
 Override the model with `provider/model` syntax:
 
 ```sh
-refinery "prompt" --models claude-code/claude-sonnet-4-6,codex-cli/o3-pro
+refinery converge "prompt" --models claude-code/claude-sonnet-4-6,codex-cli/o3-pro
 ```
 
 ### OpenCode models
@@ -70,7 +70,7 @@ refinery "prompt" --models claude-code/claude-sonnet-4-6,codex-cli/o3-pro
 OpenCode supports multiple sub-providers. Use `opencode/sub-provider/model`:
 
 ```sh
-refinery "prompt" --models \
+refinery converge "prompt" --models \
   opencode/opencode/minimax-m2.5-free,\
   opencode/kimi-for-coding/kimi-k2-thinking,\
   opencode/minimax-coding-plan/MiniMax-M2.5,\
@@ -84,7 +84,7 @@ Run `opencode models` to list all available models.
 Use any combination of providers in a single run:
 
 ```sh
-refinery "prompt" --models \
+refinery converge "prompt" --models \
   claude-code,codex-cli,gemini-cli,\
   opencode/kimi-for-coding/kimi-k2-thinking,\
   opencode/zai-coding-plan/glm-5
@@ -95,25 +95,25 @@ refinery "prompt" --models \
 Set the convergence threshold
 
 ```sh
-refinery "prompt" --models claude-code,codex-cli --threshold 9.0
+refinery converge "prompt" --models claude-code,codex-cli --threshold 9.0
 ```
 
 Limit the number of rounds
 
 ```sh
-refinery "prompt" --models claude-code,codex-cli --max-rounds 3
+refinery converge "prompt" --models claude-code,codex-cli --max-rounds 3
 ```
 
 Set per-call timeout (seconds)
 
 ```sh
-refinery "prompt" --models claude-code,codex-cli --timeout 180
+refinery converge "prompt" --models claude-code,codex-cli --timeout 180
 ```
 
 Limit concurrent API calls
 
 ```sh
-refinery "prompt" --models claude-code,codex-cli --max-concurrent 4
+refinery converge "prompt" --models claude-code,codex-cli --max-concurrent 4
 ```
 
 ### Output Formats
@@ -121,7 +121,7 @@ refinery "prompt" --models claude-code,codex-cli --max-concurrent 4
 Output is plain text by default. Get JSON for programmatic use
 
 ```sh
-refinery "prompt" --models claude-code,codex-cli --output-format json
+refinery converge "prompt" --models claude-code,codex-cli --output-format json
 ```
 
 ```json
@@ -140,7 +140,7 @@ refinery "prompt" --models claude-code,codex-cli --output-format json
 Estimate API call count without running
 
 ```sh
-refinery "prompt" --models claude-code,codex-cli,gemini-cli --dry-run
+refinery converge "prompt" --models claude-code,codex-cli,gemini-cli --dry-run
 ```
 
 ### File Input
@@ -149,13 +149,13 @@ Pass one or more files with `-f`/`--file` (repeatable, 1 MB total)
 
 ```sh
 # Files as the subject — no text prompt needed
-refinery --file src/auth.rs --file src/crypto.rs --models claude-code,codex-cli,gemini-cli
+refinery converge --file src/auth.rs --file src/crypto.rs --models claude-code,codex-cli,gemini-cli
 
 # Files with an instruction prompt
-refinery "review these for security issues" --file src/auth.rs --file src/lib.rs --models claude-code,codex-cli
+refinery converge "review these for security issues" --file src/auth.rs --file src/lib.rs --models claude-code,codex-cli
 
 # Combine stdin instruction with a file
-echo "what does this do?" | refinery - --file src/main.rs --models claude-code,gemini-cli
+echo "what does this do?" | refinery converge - --file src/main.rs --models claude-code,gemini-cli
 ```
 
 File contents are wrapped in nonce-tagged blocks (`<file-{nonce} path="...">`) so models know which content came from where. Non-UTF-8 files and files exceeding the 1 MB budget are rejected with a clear error before any API calls are made.
@@ -165,14 +165,14 @@ File contents are wrapped in nonce-tagged blocks (`<file-{nonce} path="...">`) s
 Pipe a prompt from another command (max 1 MB)
 
 ```sh
-cat question.txt | refinery - --models claude-code,codex-cli
+cat question.txt | refinery converge - --models claude-code,codex-cli
 ```
 
 ### Verbose and Debug
 
 ```sh
-refinery "prompt" --models claude-code,codex-cli --verbose  # per-round progress
-refinery "prompt" --models claude-code,codex-cli --debug    # raw CLI invocations
+refinery converge "prompt" --models claude-code,codex-cli --verbose  # per-round progress
+refinery converge "prompt" --models claude-code,codex-cli --debug    # raw CLI invocations
 ```
 
 ### Exit Codes
@@ -192,7 +192,7 @@ refinery "prompt" --models claude-code,codex-cli --debug    # raw CLI invocation
   <summary>The Hitchhiker's Guide to the Galaxy</summary>
 
   ```
-  $ refinery --max-rounds 5 --output-format json --models claude-code,codex-cli,gemini-cli --timeout 1800 --idle-timeout 480 --output-dir out "What's the answer to life, the Universe, and everything?"
+  $ refinery converge --max-rounds 5 --output-format json --models claude-code,codex-cli,gemini-cli --timeout 1800 --idle-timeout 480 --output-dir out "What's the answer to life, the Universe, and everything?"
   
     Round 1/5
     ── propose ──
@@ -268,7 +268,7 @@ refinery "prompt" --models claude-code,codex-cli --debug    # raw CLI invocation
   <summary>The Car Wash Test</summary>
   
   ```
-  $ refinery --max-rounds 5 --output-format json --models claude-code,codex-cli,gemini-cli --timeout 1800 --idle-timeout 480 --output-dir out "The car wash is only 100m away from my house, should I walk or drive?" --dry-run
+  $ refinery converge --max-rounds 5 --output-format json --models claude-code,codex-cli,gemini-cli --timeout 1800 --idle-timeout 480 --output-dir out "The car wash is only 100m away from my house, should I walk or drive?" --dry-run
  Dry run estimate:
    Models: 3
    Calls per round: 9
@@ -277,7 +277,7 @@ refinery "prompt" --models claude-code,codex-cli --debug    # raw CLI invocation
   ```
   
   ```
-  $ refinery --max-rounds 5 --output-format json --models claude-code,codex-cli,gemini-cli --timeout 1800 --idle-timeout 480 --output-dir out "The car wash is only 100m away from my house, should I walk or drive?"
+  $ refinery converge --max-rounds 5 --output-format json --models claude-code,codex-cli,gemini-cli --timeout 1800 --idle-timeout 480 --output-dir out "The car wash is only 100m away from my house, should I walk or drive?"
   
     Round 1/5
     ── propose ──
@@ -367,7 +367,7 @@ refinery "prompt" --models claude-code,codex-cli --debug    # raw CLI invocation
   ```
   
   ```
-  $ refinery --max-rounds 5 --output-format json --models claude-code,codex-cli,gemini-cli --timeout 1800 --idle-timeout 480 --output-dir out "The car wash is only 100m away from my house, should I walk or drive?"
+  $ refinery converge --max-rounds 5 --output-format json --models claude-code,codex-cli,gemini-cli --timeout 1800 --idle-timeout 480 --output-dir out "The car wash is only 100m away from my house, should I walk or drive?"
   
     Round 1/5
     ── propose ──
