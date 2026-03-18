@@ -101,6 +101,7 @@ pub enum Phase {
     Propose,
     Evaluate,
     Close,
+    Synthesize,
 }
 
 impl std::fmt::Display for Phase {
@@ -109,6 +110,7 @@ impl std::fmt::Display for Phase {
             Self::Propose => write!(f, "propose"),
             Self::Evaluate => write!(f, "evaluate"),
             Self::Close => write!(f, "close"),
+            Self::Synthesize => write!(f, "synthesize"),
         }
     }
 }
@@ -127,6 +129,10 @@ pub enum ConvergenceStatus {
     InsufficientModels,
     /// Run was cancelled via `Session::cancel()`.
     Cancelled,
+    /// Synthesis completed successfully.
+    Synthesized,
+    /// No answers met the synthesis threshold after converge rounds.
+    NoQualifyingAnswers,
 }
 
 /// The final output of a consensus run.
