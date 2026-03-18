@@ -66,7 +66,7 @@ Reuse `Engine::run()` with `max_rounds` set to `--converge-rounds` (default 2). 
 
 ### Phase 2: Synthesis prompts
 
-**File: `crates/refinery_core/src/prompts.rs`**
+**File: `crates/refinery_core/src/prompts/synthesize.rs`**
 
 - Add `SYNTHESIS_SCHEMA`:
   ```json
@@ -88,7 +88,7 @@ Reuse `Engine::run()` with `max_rounds` set to `--converge-rounds` (default 2). 
 
 ### Phase 3: Synthesis orchestration
 
-**File: `crates/refinery_cli/src/main.rs` — `run_synthesize()`**
+**File: `crates/refinery_cli/src/commands/synthesize.rs` — `run()`**
 
 ```
 1. Parse args, build providers (same as converge)
@@ -156,8 +156,11 @@ Reuse `Engine::run()` with `max_rounds` set to `--converge-rounds` (default 2). 
 
 | File | Change |
 |---|---|
-| `crates/refinery_cli/src/main.rs` | Add `SynthesizeArgs`, `run_synthesize()`, route in `Command` |
-| `crates/refinery_core/src/prompts.rs` | Add synthesis prompts + schemas |
+| `crates/refinery_cli/src/main.rs` | Thin routing: `Cli` + `Command` + `main()` |
+| `crates/refinery_cli/src/commands/synthesize.rs` | `SynthesizeArgs` + `run()` |
+| `crates/refinery_cli/src/commands/converge.rs` | `ConvergeArgs` + `run()` (extracted from main.rs) |
+| `crates/refinery_cli/src/commands/common.rs` | `SharedArgs`, output types, shared helpers |
+| `crates/refinery_core/src/prompts/synthesize.rs` | Synthesis prompts + schemas |
 | `crates/refinery_core/src/types.rs` | Add `Synthesized`, `NoQualifyingAnswers` to `ConvergenceStatus` |
 | `crates/refinery_core/src/types.rs` | Add `Phase::Synthesize` |
 | `crates/refinery_core/src/phases/evaluate.rs` | Possibly extend `parse_evaluation()` for synthesis rubric |

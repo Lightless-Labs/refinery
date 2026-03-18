@@ -39,7 +39,7 @@ topic: synthesize-verb
 
 ## Key Decisions
 
-- **All models synthesize, not just qualifiers:** Every model gets a chance to synthesize, but only qualifying *answers* are provided as input (decision C from brainstorm)
+- **All models synthesize, not just qualifiers:** Every model gets a chance to synthesize, but only qualifying *answers* are provided as input
 - **Converge rounds as quality filter:** Default 2 rounds to raise the bar before synthesis, configurable
 - **Different eval rubric for synthesis:** Integration + coherence + completeness + prompt fidelity, not the converge rubric (accuracy + correctness)
 - **Single synthesis round:** No iterative synthesis — one propose + one evaluate is enough
