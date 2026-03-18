@@ -99,8 +99,8 @@ struct ConvergeArgs {
     #[arg(short = 'r', long, default_value = "5")]
     max_rounds: u32,
 
-    /// Consecutive rounds the same model must lead to converge [default: 2]
-    #[arg(short = 's', long, default_value = "2")]
+    /// Consecutive rounds the same model must lead to converge [default: 2] (range: 1-20)
+    #[arg(short = 's', long, default_value = "2", value_parser = clap::value_parser!(u32).range(1..=20))]
     stability_rounds: u32,
 }
 
@@ -273,6 +273,14 @@ async fn run_converge(args: ConvergeArgs) -> ExitCode {
             return ExitCode::from(4);
         }
     };
+
+    if args.stability_rounds > args.max_rounds {
+        eprintln!(
+            "Error: --stability-rounds ({}) cannot exceed --max-rounds ({})",
+            args.stability_rounds, args.max_rounds
+        );
+        return ExitCode::from(4);
+    }
 
     let config = match EngineConfig::new(
         model_ids.clone(),
