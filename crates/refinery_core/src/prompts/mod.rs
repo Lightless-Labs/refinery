@@ -1,3 +1,5 @@
+pub mod synthesize;
+
 use std::fmt::Write as _;
 
 /// JSON schema for the PROPOSE phase — models return `{"answer": "..."}`.
