@@ -104,7 +104,7 @@ Limit the number of rounds
 refinery converge "prompt" --models claude-code,codex-cli --max-rounds 3
 ```
 
-Require more consecutive rounds of stable leadership before converging
+Require more consecutive rounds of stable leadership before converging (must be between 1 and 20, and <= `--max-rounds`)
 
 ```sh
 refinery converge "prompt" --models claude-code,codex-cli --stability-rounds 3
@@ -650,7 +650,7 @@ Models are anonymized during evaluation (shuffled labels A, B, C…) to reduce b
 
 The default `VoteThreshold` strategy converges when:
 - The top model's mean score ≥ threshold (default 8.0, set with `--threshold`), **and**
-- The same model has led for N consecutive rounds (default 2, set with `--stability-rounds`)
+- The same model has led for N consecutive rounds (default 2, set with `--stability-rounds`; must be <= `--max-rounds`)
 
 ### Cost per Round
 
