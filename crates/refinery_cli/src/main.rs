@@ -98,6 +98,10 @@ struct ConvergeArgs {
     /// Maximum rounds [default: 5] (range: 1-20)
     #[arg(short = 'r', long, default_value = "5")]
     max_rounds: u32,
+
+    /// Consecutive rounds the same model must lead to converge [default: 2]
+    #[arg(short = 's', long, default_value = "2")]
+    stability_rounds: u32,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -274,7 +278,7 @@ async fn run_converge(args: ConvergeArgs) -> ExitCode {
         model_ids.clone(),
         args.max_rounds,
         args.threshold,
-        2, // stability_rounds
+        args.stability_rounds,
         Duration::from_secs(shared.timeout),
         shared.max_concurrent,
     ) {
@@ -339,7 +343,10 @@ async fn run_converge(args: ConvergeArgs) -> ExitCode {
         Some(display.consensus_callback(model_ids.clone()))
     };
 
-    let strategy = Box::new(refinery_core::VoteThreshold::new(args.threshold, 2));
+    let strategy = Box::new(refinery_core::VoteThreshold::new(
+        args.threshold,
+        args.stability_rounds,
+    ));
     let engine =
         refinery_core::Engine::new(providers, strategy, config, consensus_progress.clone());
 
