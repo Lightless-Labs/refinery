@@ -9,9 +9,8 @@ use tokio::sync::Semaphore;
 use tracing::info;
 
 use refinery_core::EngineConfig;
-use refinery_core::phases;
 use refinery_core::prompts;
-use refinery_core::types::{Message, ModelId};
+use refinery_core::types::{Message, ModelId, RoundOutcome};
 
 use super::common::{
     AnswerOutput, ErrorResponse, JsonOutput, MetadataOutput, OutputFormat, SharedArgs,
@@ -46,6 +45,56 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
     let shared = &args.shared;
     init_tracing(shared);
 
+    // Validate args before any I/O
+    if args.stability_rounds > args.converge_rounds {
+        eprintln!(
+            "Error: --stability-rounds ({}) cannot exceed --converge-rounds ({})",
+            args.stability_rounds, args.converge_rounds
+        );
+        return ExitCode::from(4);
+    }
+
+    let synthesis_threshold = args.synthesis_threshold.unwrap_or(args.threshold);
+
+    // Dry run: estimate calls without resolving prompt or building providers
+    if shared.dry_run {
+        let model_ids: Vec<ModelId> = match shared
+            .models
+            .iter()
+            .map(|m| super::common::parse_model_spec(m))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(ids) => ids,
+            Err(e) => {
+                eprintln!("Error: {e}");
+                return ExitCode::from(4);
+            }
+        };
+        let n = model_ids.len();
+        if let Ok(config) = EngineConfig::new(
+            model_ids,
+            args.converge_rounds,
+            args.threshold,
+            args.stability_rounds,
+            Duration::from_secs(shared.timeout),
+            shared.max_concurrent,
+        ) {
+            let estimate = refinery_core::Engine::estimate(&config);
+            #[allow(clippy::cast_possible_truncation)]
+            let synthesis_calls = if n > 1 { (n + n * (n - 1)) as u32 } else { 1 };
+            println!("Dry run estimate:");
+            println!("  Models: {}", estimate.model_count);
+            println!("  Converge rounds: {}", args.converge_rounds);
+            println!("  Converge calls: {}", estimate.total_calls);
+            println!("  Synthesis calls: {synthesis_calls}");
+            println!(
+                "  Total calls (max): {}",
+                estimate.total_calls + synthesis_calls
+            );
+        }
+        return ExitCode::SUCCESS;
+    }
+
     let prompt = match resolve_prompt(shared) {
         Ok(p) => p,
         Err(code) => return code,
@@ -55,8 +104,6 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
         Ok(r) => r,
         Err(code) => return code,
     };
-
-    let synthesis_threshold = args.synthesis_threshold.unwrap_or(args.threshold);
 
     let config = match EngineConfig::new(
         model_ids.clone(),
@@ -72,23 +119,6 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
             return ExitCode::from(4);
         }
     };
-
-    if shared.dry_run {
-        let estimate = refinery_core::Engine::estimate(&config);
-        let n = model_ids.len();
-        #[allow(clippy::cast_possible_truncation)]
-        let synthesis_calls = (n + n * (n - 1)) as u32; // N propose + N*(N-1) evaluate
-        println!("Dry run estimate:");
-        println!("  Models: {}", estimate.model_count);
-        println!("  Converge rounds: {}", args.converge_rounds);
-        println!("  Converge calls: {}", estimate.total_calls);
-        println!("  Synthesis calls: {synthesis_calls}");
-        println!(
-            "  Total calls (max): {}",
-            estimate.total_calls + synthesis_calls
-        );
-        return ExitCode::SUCCESS;
-    }
 
     // ── Phase 1: Converge rounds ────────────────────────────────────────
 
@@ -289,33 +319,131 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
 
     // ── Phase 4: Evaluate syntheses ─────────────────────────────────────
 
+    // Single synthesis: skip evaluation, return it directly
+    if synthesis_proposals.len() == 1 {
+        if let Some(handle) = tick_handle {
+            handle.abort();
+        }
+        display.finish();
+
+        let (winner_id, winner_answer) = synthesis_proposals.into_iter().next().unwrap();
+        return emit_synthesis_result(
+            shared,
+            &winner_id,
+            &winner_answer,
+            &[(winner_id.clone(), winner_answer.clone(), 0.0)],
+            outcome.final_round,
+            outcome.total_calls + 1,
+            outcome.elapsed,
+            &rounds,
+        );
+    }
+
     eprintln!("  ── evaluate syntheses ──");
 
-    let eval_set = phases::evaluate::run(
-        &providers
-            .iter()
-            .filter(|p| synthesis_proposals.contains_key(p.model_id()))
-            .cloned()
-            .collect::<Vec<_>>(),
-        &synthesis_proposals,
-        &prompt,
-        "", // no round context for synthesis eval
-        &semaphore,
-        Duration::from_secs(shared.timeout),
-        None, // no progress callback for synthesis eval (we print manually)
-    )
-    .await;
+    // Use synthesis-specific rubric: build custom eval prompts per pair
+    let synthesis_nonce = prompts::generate_nonce();
+    let synth_labels = prompts::shuffled_labels(synthesis_proposals.len());
+    let synth_ids: Vec<ModelId> = synthesis_proposals.keys().cloned().collect();
+    let label_map: HashMap<ModelId, String> = synth_ids
+        .iter()
+        .zip(synth_labels.iter())
+        .map(|(id, label)| (id.clone(), label.clone()))
+        .collect();
 
-    // Print eval results
-    for ((reviewer, reviewee), eval) in &eval_set.evaluations {
-        let score = eval.score.value();
-        let preview = refinery_core::progress::preview(&eval.review.overall_assessment, 60);
-        eprintln!("    \x1b[32m✓\x1b[0m {reviewer} → {reviewee}: {score} — \"{preview}\"");
+    let mut eval_handles = tokio::task::JoinSet::new();
+
+    for evaluator_provider in &providers {
+        let evaluator_id = evaluator_provider.model_id().clone();
+        if !synthesis_proposals.contains_key(&evaluator_id) {
+            continue;
+        }
+
+        for (evaluatee_id, synthesis_text) in &synthesis_proposals {
+            if *evaluatee_id == evaluator_id {
+                continue;
+            }
+
+            let eval_label = label_map.get(evaluatee_id).cloned().unwrap_or_default();
+            let eval_prompt_text = prompts::synthesize::synthesize_evaluate_prompt(
+                &prompt,
+                synthesis_text,
+                &eval_label,
+                &synthesis_nonce,
+                qualifying.len(),
+            );
+
+            let messages = vec![
+                Message::system(prompts::system_prompt()),
+                Message::user(eval_prompt_text),
+            ];
+
+            let sem = semaphore.clone();
+            let provider = evaluator_provider.clone();
+            let evaluator = evaluator_id.clone();
+            let evaluatee = evaluatee_id.clone();
+
+            eval_handles.spawn(async move {
+                let _permit = sem.acquire().await.expect("semaphore closed");
+                let result = tokio::time::timeout(
+                    timeout,
+                    provider
+                        .send_message(&messages, Some(prompts::synthesize::SYNTHESIS_EVAL_SCHEMA)),
+                )
+                .await;
+                (evaluator, evaluatee, result)
+            });
+        }
+    }
+
+    // Collect synthesis evaluation scores
+    let mut synthesis_scores: HashMap<ModelId, Vec<f64>> = HashMap::new();
+    let mut eval_count: u32 = 0;
+
+    #[allow(clippy::similar_names)]
+    while let Some(result) = eval_handles.join_next().await {
+        match result {
+            Ok((from, to, Ok(Ok(response)))) => {
+                eval_count += 1;
+                let parsed: serde_json::Value = serde_json::from_str(&response).unwrap_or_default();
+                let score = parsed
+                    .get("score")
+                    .and_then(serde_json::Value::as_f64)
+                    .unwrap_or(0.0);
+                let rationale = parsed
+                    .get("rationale")
+                    .and_then(|r| r.as_str())
+                    .unwrap_or("");
+                let preview = refinery_core::progress::preview(rationale, 60);
+                eprintln!("    \x1b[32m✓\x1b[0m {from} → {to}: {score:.1} — \"{preview}\"");
+                synthesis_scores.entry(to).or_default().push(score);
+            }
+            Ok((from, to, Ok(Err(e)))) => {
+                eval_count += 1;
+                eprintln!("    \x1b[31m✗\x1b[0m {from} → {to} eval failed — {e}");
+            }
+            Ok((from, to, Err(_))) => {
+                eval_count += 1;
+                eprintln!("    \x1b[31m✗\x1b[0m {from} → {to} eval timed out");
+            }
+            Err(e) => {
+                eprintln!("    \x1b[31m✗\x1b[0m eval task panicked: {e}");
+            }
+        }
     }
 
     // ── Phase 5: Pick best synthesis ────────────────────────────────────
 
-    let mean_scores = phases::close::compute_mean_scores(&eval_set);
+    #[allow(clippy::cast_precision_loss)]
+    let mean_scores: HashMap<ModelId, f64> = synthesis_scores
+        .iter()
+        .map(|(model, scores)| {
+            (
+                model.clone(),
+                scores.iter().sum::<f64>() / scores.len() as f64,
+            )
+        })
+        .collect();
 
     let best = mean_scores
         .iter()
@@ -326,8 +454,8 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
     }
     display.finish();
 
-    let total_calls = outcome.total_calls
-        + u32::try_from(synthesis_proposals.len() + eval_set.evaluations.len()).unwrap_or(0);
+    #[allow(clippy::cast_possible_truncation)]
+    let total_calls = outcome.total_calls + synthesis_proposals.len() as u32 + eval_count;
 
     if let Some((winner_id, best_score)) = best {
         let winner_answer = synthesis_proposals
@@ -394,4 +522,67 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
         eprintln!("No synthesis evaluations completed.");
         ExitCode::from(1)
     }
+}
+
+/// Emit synthesis result (used for both single-model and multi-model paths).
+#[allow(clippy::too_many_arguments)]
+fn emit_synthesis_result(
+    shared: &SharedArgs,
+    winner_id: &ModelId,
+    winner_answer: &str,
+    all: &[(ModelId, String, f64)], // (model_id, answer, mean_score)
+    final_round: u32,
+    total_calls: u32,
+    elapsed: Duration,
+    rounds: &[RoundOutcome],
+) -> ExitCode {
+    eprintln!("  \x1b[32m→ Best synthesis:\x1b[0m {winner_id}");
+
+    let all_synthesis_answers: Vec<AnswerOutput> = all
+        .iter()
+        .map(|(m, a, s)| AnswerOutput {
+            model_id: m.to_string(),
+            answer: a.clone(),
+            mean_score: *s,
+        })
+        .collect();
+
+    match shared.output_format {
+        OutputFormat::Json => {
+            let json_output = JsonOutput {
+                status: "synthesized".to_string(),
+                winner: Some(WinnerOutput {
+                    model_id: winner_id.to_string(),
+                    answer: winner_answer.to_string(),
+                }),
+                final_round,
+                strategy: "synthesize".to_string(),
+                all_answers: all_synthesis_answers,
+                metadata: MetadataOutput {
+                    total_rounds: final_round,
+                    total_calls,
+                    elapsed_ms: elapsed.as_millis(),
+                    models_dropped: vec![],
+                },
+            };
+            if let Ok(json) = serde_json::to_string_pretty(&json_output) {
+                println!("{json}");
+            }
+        }
+        OutputFormat::Text => {
+            println!("Status: Synthesized");
+            println!("Winner: {winner_id}");
+            println!("Total calls: {total_calls}");
+            println!("Elapsed: {elapsed:?}");
+            println!("\n--- Synthesis ---\n");
+            println!("{winner_answer}");
+        }
+    }
+
+    if let Some(ref dir) = shared.output_dir {
+        let run_dir = make_run_dir(dir, shared.prompt.as_deref());
+        let _ = save_round_artifacts(&run_dir, rounds);
+    }
+
+    ExitCode::SUCCESS
 }

@@ -37,6 +37,53 @@ pub async fn run(args: ConvergeArgs) -> ExitCode {
     let shared = &args.shared;
     init_tracing(shared);
 
+    // Validate args before any I/O
+    if args.stability_rounds > args.max_rounds {
+        eprintln!(
+            "Error: --stability-rounds ({}) cannot exceed --max-rounds ({})",
+            args.stability_rounds, args.max_rounds
+        );
+        return ExitCode::from(4);
+    }
+
+    // Dry run: estimate calls without resolving prompt or building providers
+    if shared.dry_run {
+        let model_ids: Vec<tundish_core::ModelId> = match shared
+            .models
+            .iter()
+            .map(|m| super::common::parse_model_spec(m))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(ids) => ids,
+            Err(e) => {
+                eprintln!("Error: {e}");
+                return ExitCode::from(4);
+            }
+        };
+        if let Ok(config) = EngineConfig::new(
+            model_ids,
+            args.max_rounds,
+            args.threshold,
+            args.stability_rounds,
+            Duration::from_secs(shared.timeout),
+            shared.max_concurrent,
+        ) {
+            let estimate = refinery_core::Engine::estimate(&config);
+            println!("Dry run estimate:");
+            println!("  Models: {}", estimate.model_count);
+            println!("  Calls per round: {}", estimate.calls_per_round);
+            println!("  Max rounds: {}", estimate.max_rounds);
+            println!("  Total calls (max): {}", estimate.total_calls);
+            if estimate.model_count > 5 {
+                eprintln!(
+                    "Warning: N={} has quadratic cost scaling ({} calls/round)",
+                    estimate.model_count, estimate.calls_per_round
+                );
+            }
+        }
+        return ExitCode::SUCCESS;
+    }
+
     let prompt = match resolve_prompt(shared) {
         Ok(p) => p,
         Err(code) => return code,
@@ -46,14 +93,6 @@ pub async fn run(args: ConvergeArgs) -> ExitCode {
         Ok(r) => r,
         Err(code) => return code,
     };
-
-    if args.stability_rounds > args.max_rounds {
-        eprintln!(
-            "Error: --stability-rounds ({}) cannot exceed --max-rounds ({})",
-            args.stability_rounds, args.max_rounds
-        );
-        return ExitCode::from(4);
-    }
 
     let config = match EngineConfig::new(
         model_ids.clone(),
@@ -69,22 +108,6 @@ pub async fn run(args: ConvergeArgs) -> ExitCode {
             return ExitCode::from(4);
         }
     };
-
-    if shared.dry_run {
-        let estimate = refinery_core::Engine::estimate(&config);
-        println!("Dry run estimate:");
-        println!("  Models: {}", estimate.model_count);
-        println!("  Calls per round: {}", estimate.calls_per_round);
-        println!("  Max rounds: {}", estimate.max_rounds);
-        println!("  Total calls (max): {}", estimate.total_calls);
-        if estimate.model_count > 5 {
-            eprintln!(
-                "Warning: N={} has quadratic cost scaling ({} calls/round)",
-                estimate.model_count, estimate.calls_per_round
-            );
-        }
-        return ExitCode::SUCCESS;
-    }
 
     let consensus_progress: Option<refinery_core::ProgressFn> =
         if shared.verbose || shared.debug || !std::io::stderr().is_terminal() {
