@@ -60,7 +60,7 @@ pub async fn run(args: ConvergeArgs) -> ExitCode {
                 return ExitCode::from(4);
             }
         };
-        if let Ok(config) = EngineConfig::new(
+        let config = match EngineConfig::new(
             model_ids,
             args.max_rounds,
             args.threshold,
@@ -68,18 +68,23 @@ pub async fn run(args: ConvergeArgs) -> ExitCode {
             Duration::from_secs(shared.timeout),
             shared.max_concurrent,
         ) {
-            let estimate = refinery_core::Engine::estimate(&config);
-            println!("Dry run estimate:");
-            println!("  Models: {}", estimate.model_count);
-            println!("  Calls per round: {}", estimate.calls_per_round);
-            println!("  Max rounds: {}", estimate.max_rounds);
-            println!("  Total calls (max): {}", estimate.total_calls);
-            if estimate.model_count > 5 {
-                eprintln!(
-                    "Warning: N={} has quadratic cost scaling ({} calls/round)",
-                    estimate.model_count, estimate.calls_per_round
-                );
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Config error: {e}");
+                return ExitCode::from(4);
             }
+        };
+        let estimate = refinery_core::Engine::estimate(&config);
+        println!("Dry run estimate:");
+        println!("  Models: {}", estimate.model_count);
+        println!("  Calls per round: {}", estimate.calls_per_round);
+        println!("  Max rounds: {}", estimate.max_rounds);
+        println!("  Total calls (max): {}", estimate.total_calls);
+        if estimate.model_count > 5 {
+            eprintln!(
+                "Warning: N={} has quadratic cost scaling ({} calls/round)",
+                estimate.model_count, estimate.calls_per_round
+            );
         }
         return ExitCode::SUCCESS;
     }
