@@ -71,7 +71,7 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
             }
         };
         let n = model_ids.len();
-        if let Ok(config) = EngineConfig::new(
+        let config = match EngineConfig::new(
             model_ids,
             args.converge_rounds,
             args.threshold,
@@ -79,19 +79,24 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
             Duration::from_secs(shared.timeout),
             shared.max_concurrent,
         ) {
-            let estimate = refinery_core::Engine::estimate(&config);
-            #[allow(clippy::cast_possible_truncation)]
-            let synthesis_calls = if n > 1 { (n + n * (n - 1)) as u32 } else { 1 };
-            println!("Dry run estimate:");
-            println!("  Models: {}", estimate.model_count);
-            println!("  Converge rounds: {}", args.converge_rounds);
-            println!("  Converge calls: {}", estimate.total_calls);
-            println!("  Synthesis calls: {synthesis_calls}");
-            println!(
-                "  Total calls (max): {}",
-                estimate.total_calls + synthesis_calls
-            );
-        }
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Config error: {e}");
+                return ExitCode::from(4);
+            }
+        };
+        let estimate = refinery_core::Engine::estimate(&config);
+        #[allow(clippy::cast_possible_truncation)]
+        let synthesis_calls = if n > 1 { (n + n * (n - 1)) as u32 } else { 1 };
+        println!("Dry run estimate:");
+        println!("  Models: {}", estimate.model_count);
+        println!("  Converge rounds: {}", args.converge_rounds);
+        println!("  Converge calls: {}", estimate.total_calls);
+        println!("  Synthesis calls: {synthesis_calls}");
+        println!(
+            "  Total calls (max): {}",
+            estimate.total_calls + synthesis_calls
+        );
         return ExitCode::SUCCESS;
     }
 
