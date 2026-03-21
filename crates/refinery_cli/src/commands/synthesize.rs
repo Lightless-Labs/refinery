@@ -318,7 +318,27 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
             handle.abort();
         }
         display.finish();
-        eprintln!("All models failed to produce syntheses.");
+        match shared.output_format {
+            OutputFormat::Json => {
+                let err = ErrorResponse {
+                    status: "error".to_string(),
+                    error: super::common::ErrorDetail {
+                        code: "synthesis_failed".to_string(),
+                        message: "All models failed to produce syntheses.".to_string(),
+                        provider: None,
+                        round: None,
+                        phase: Some("synthesize".to_string()),
+                        retryable: true,
+                    },
+                };
+                if let Ok(json) = serde_json::to_string_pretty(&err) {
+                    eprintln!("{json}");
+                }
+            }
+            OutputFormat::Text => {
+                eprintln!("All models failed to produce syntheses.");
+            }
+        }
         return ExitCode::from(1);
     }
 
@@ -411,17 +431,23 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
             Ok((from, to, Ok(Ok(response)))) => {
                 eval_count += 1;
                 let parsed: serde_json::Value = serde_json::from_str(&response).unwrap_or_default();
-                let score = parsed
+                if let Some(score) = parsed
                     .get("score")
                     .and_then(serde_json::Value::as_f64)
-                    .unwrap_or(0.0);
-                let rationale = parsed
-                    .get("rationale")
-                    .and_then(|r| r.as_str())
-                    .unwrap_or("");
-                let preview = refinery_core::progress::preview(rationale, 60);
-                eprintln!("    \x1b[32m✓\x1b[0m {from} → {to}: {score:.1} — \"{preview}\"");
-                synthesis_scores.entry(to).or_default().push(score);
+                    .filter(|s| (1.0..=10.0).contains(s))
+                {
+                    let rationale = parsed
+                        .get("rationale")
+                        .and_then(|r| r.as_str())
+                        .unwrap_or("");
+                    let preview = refinery_core::progress::preview(rationale, 60);
+                    eprintln!("    \x1b[32m✓\x1b[0m {from} → {to}: {score:.1} — \"{preview}\"");
+                    synthesis_scores.entry(to).or_default().push(score);
+                } else {
+                    eprintln!(
+                        "    \x1b[31m✗\x1b[0m {from} → {to} eval returned invalid score, skipping"
+                    );
+                }
             }
             Ok((from, to, Ok(Err(e)))) => {
                 eval_count += 1;
@@ -524,7 +550,27 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
 
         ExitCode::SUCCESS
     } else {
-        eprintln!("No synthesis evaluations completed.");
+        match shared.output_format {
+            OutputFormat::Json => {
+                let err = ErrorResponse {
+                    status: "error".to_string(),
+                    error: super::common::ErrorDetail {
+                        code: "synthesis_eval_failed".to_string(),
+                        message: "No synthesis evaluations completed.".to_string(),
+                        provider: None,
+                        round: None,
+                        phase: Some("evaluate_syntheses".to_string()),
+                        retryable: true,
+                    },
+                };
+                if let Ok(json) = serde_json::to_string_pretty(&err) {
+                    eprintln!("{json}");
+                }
+            }
+            OutputFormat::Text => {
+                eprintln!("No synthesis evaluations completed.");
+            }
+        }
         ExitCode::from(1)
     }
 }
