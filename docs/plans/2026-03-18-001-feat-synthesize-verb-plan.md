@@ -1,9 +1,10 @@
 ---
 title: "feat: synthesize verb"
 type: feat
-status: active
+status: completed
 date: 2026-03-18
 origin: docs/brainstorms/2026-03-18-synthesize-verb-requirements.md
+completed: 2026-03-21
 ---
 
 # Synthesize Verb
