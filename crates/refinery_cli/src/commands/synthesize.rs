@@ -56,6 +56,13 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
 
     let synthesis_threshold = args.synthesis_threshold.unwrap_or(args.threshold);
 
+    if !(1.0..=10.0).contains(&synthesis_threshold) {
+        eprintln!(
+            "Error: --synthesis-threshold ({synthesis_threshold}) must be between 1.0 and 10.0"
+        );
+        return ExitCode::from(4);
+    }
+
     // Dry run: estimate calls without resolving prompt or building providers
     if shared.dry_run {
         let model_ids: Vec<ModelId> = match shared
@@ -236,6 +243,8 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
 
     // ── Phase 3: Synthesis ──────────────────────────────────────────────
 
+    let synth_start = std::time::Instant::now();
+
     // Build synthesis prompt with qualifying answers (anonymized)
     let nonce = prompts::generate_nonce();
     let labels = prompts::shuffled_labels(qualifying.len());
@@ -266,6 +275,7 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
 
     let timeout = Duration::from_secs(shared.timeout);
     let mut synthesis_proposals: HashMap<ModelId, String> = HashMap::new();
+    let mut synthesis_attempt_count: u32 = 0;
 
     let mut handles = tokio::task::JoinSet::new();
     for provider in &providers {
@@ -288,6 +298,7 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
     while let Some(result) = handles.join_next().await {
         match result {
             Ok((model_id, Ok(Ok(response)))) => {
+                synthesis_attempt_count += 1;
                 // Extract synthesis from structured output
                 let synthesis = serde_json::from_str::<serde_json::Value>(&response)
                     .ok()
@@ -302,12 +313,15 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
                 synthesis_proposals.insert(model_id, synthesis);
             }
             Ok((model_id, Ok(Err(e)))) => {
+                synthesis_attempt_count += 1;
                 eprintln!("    \x1b[31m✗\x1b[0m {model_id} synthesis failed — {e}");
             }
             Ok((model_id, Err(_))) => {
+                synthesis_attempt_count += 1;
                 eprintln!("    \x1b[31m✗\x1b[0m {model_id} synthesis timed out");
             }
             Err(e) => {
+                synthesis_attempt_count += 1;
                 eprintln!("    \x1b[31m✗\x1b[0m task panicked: {e}");
             }
         }
@@ -358,8 +372,8 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
             &winner_answer,
             &[(winner_id.clone(), winner_answer.clone(), 0.0)],
             outcome.final_round,
-            outcome.total_calls + 1,
-            outcome.elapsed,
+            outcome.total_calls + synthesis_attempt_count,
+            outcome.elapsed + synth_start.elapsed(),
             &rounds,
         );
     }
@@ -485,8 +499,8 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
     }
     display.finish();
 
-    #[allow(clippy::cast_possible_truncation)]
-    let total_calls = outcome.total_calls + synthesis_proposals.len() as u32 + eval_count;
+    let total_calls = outcome.total_calls + synthesis_attempt_count + eval_count;
+    let total_elapsed = outcome.elapsed + synth_start.elapsed();
 
     if let Some((winner_id, best_score)) = best {
         let winner_answer = synthesis_proposals
@@ -523,7 +537,7 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
                     metadata: MetadataOutput {
                         total_rounds: outcome.final_round,
                         total_calls,
-                        elapsed_ms: outcome.elapsed.as_millis(),
+                        elapsed_ms: total_elapsed.as_millis(),
                         models_dropped: vec![],
                     },
                 };
@@ -536,7 +550,7 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
                 println!("Winner: {winner_id}");
                 println!("Converge rounds: {}", outcome.final_round);
                 println!("Total calls: {total_calls}");
-                println!("Elapsed: {:?}", outcome.elapsed);
+                println!("Elapsed: {total_elapsed:?}");
                 println!("\n--- Synthesis ---\n");
                 println!("{winner_answer}");
             }
