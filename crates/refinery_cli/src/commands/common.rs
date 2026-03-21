@@ -359,7 +359,8 @@ pub fn make_run_dir(base: &std::path::Path, prompt: Option<&str>) -> std::path::
         .collect::<String>()
         .trim_matches('-')
         .to_string();
-    base.join(format!("{timestamp}_{slug}"))
+    let random: u32 = rand::random::<u32>() & 0xFFFF;
+    base.join(format!("{timestamp}_{slug}_{random:04x}"))
 }
 
 fn epoch_to_utc(epoch: u64) -> (u64, u64, u64, u64, u64, u64) {
