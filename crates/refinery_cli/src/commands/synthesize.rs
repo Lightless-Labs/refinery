@@ -478,6 +478,7 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
                 eprintln!("    \x1b[31m✗\x1b[0m {from} → {to} eval timed out");
             }
             Err(e) => {
+                eval_count += 1;
                 eprintln!("    \x1b[31m✗\x1b[0m eval task panicked: {e}");
             }
         }
