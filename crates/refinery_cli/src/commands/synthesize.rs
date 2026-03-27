@@ -308,6 +308,12 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
                             .map(String::from)
                     })
                     .unwrap_or(response);
+                if synthesis.trim().is_empty() {
+                    eprintln!(
+                        "    \x1b[31m✗\x1b[0m {model_id} returned an empty synthesis, skipping"
+                    );
+                    continue;
+                }
                 let preview = refinery_core::progress::preview(&synthesis, 60);
                 eprintln!("    \x1b[32m✓\x1b[0m {model_id} synthesized — \"{preview}\"");
                 synthesis_proposals.insert(model_id, synthesis);
