@@ -129,16 +129,16 @@ Reuse `Engine::run()` with `max_rounds` set to `--converge-rounds` (default 2). 
 
 ## Acceptance Criteria
 
-- [ ] `refinery synthesize "prompt" --models a,b,c` runs converge rounds then synthesis
-- [ ] `--converge-rounds N` controls how many converge rounds run first (default 2)
-- [ ] `--synthesis-threshold` filters which answers go into synthesis (default: same as `--threshold`)
-- [ ] All models synthesize, but only qualifying answers are provided as input (R3 from origin)
-- [ ] Synthesis evaluation uses integration/coherence/completeness/fidelity rubric (R8 from origin)
-- [ ] Original user prompt is included in synthesis prompt (R7 from origin)
-- [ ] If no answers qualify, returns cleanly without running synthesis (R6 from origin)
-- [ ] JSON output matches converge format (winner + all_answers)
-- [ ] Progress display shows both converge and synthesis phases
-- [ ] `--dry-run` shows estimated total calls (converge calls + synthesis calls)
+- [x] `refinery synthesize "prompt" --models a,b,c` runs converge rounds then synthesis
+- [x] `--converge-rounds N` controls how many converge rounds run first (default 2)
+- [x] `--synthesis-threshold` filters which answers go into synthesis (default: same as `--threshold`)
+- [x] All models synthesize, but only qualifying answers are provided as input (R3 from origin)
+- [x] Synthesis evaluation uses integration/coherence/completeness/fidelity rubric (R8 from origin)
+- [x] Original user prompt is included in synthesis prompt (R7 from origin)
+- [x] If no answers qualify, returns cleanly without running synthesis (R6 from origin)
+- [x] JSON output matches converge format (winner + all_answers)
+- [x] Progress display shows both converge and synthesis phases
+- [x] `--dry-run` shows estimated total calls (converge calls + synthesis calls)
 
 ## Technical Considerations
 
