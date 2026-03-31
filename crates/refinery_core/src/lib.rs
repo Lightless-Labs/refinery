@@ -3,6 +3,7 @@ pub mod error;
 pub mod phases;
 pub mod progress;
 pub mod prompts;
+pub mod scoring;
 pub mod strategy;
 pub mod types;
 
