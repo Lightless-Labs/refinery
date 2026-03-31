@@ -29,6 +29,13 @@ enum Command {
     /// a synthesis of the qualifying answers. Syntheses are evaluated on
     /// integration, coherence, completeness, and fidelity.
     Synthesize(commands::synthesize::SynthesizeArgs),
+
+    /// Brainstorm diverse perspectives from multiple models.
+    ///
+    /// Each model iterates independently with score-only feedback. Returns a
+    /// panel of high-quality, controversial answers — those that evaluators
+    /// genuinely disagree about.
+    Brainstorm(commands::brainstorm::BrainstormArgs),
 }
 
 fn main() -> ExitCode {
@@ -61,5 +68,6 @@ async fn async_main() -> ExitCode {
     match cli.command {
         Command::Converge(args) => commands::converge::run(args).await,
         Command::Synthesize(args) => commands::synthesize::run(args).await,
+        Command::Brainstorm(args) => commands::brainstorm::run(args).await,
     }
 }
