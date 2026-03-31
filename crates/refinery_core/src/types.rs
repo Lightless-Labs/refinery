@@ -12,6 +12,12 @@ pub use tundish_core::{Message, ModelId, Role};
 /// Per-round trajectory entry: the model's own proposal and reviews received as `(label, text)`.
 pub type RoundHistory = Vec<(String, Vec<(String, String)>)>;
 
+/// Score-only trajectory: list of `(proposal_text, mean_score)` per round.
+///
+/// Used by the brainstorm verb where models see only their own prior answers
+/// and aggregate scores — no reviews, no other models' content.
+pub type ScoreHistory = Vec<(String, f64)>;
+
 /// A score in the range 1-10 (inclusive).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Score(u8);
@@ -102,6 +108,7 @@ pub enum Phase {
     Evaluate,
     Close,
     Synthesize,
+    Brainstorm,
 }
 
 impl std::fmt::Display for Phase {
@@ -111,6 +118,7 @@ impl std::fmt::Display for Phase {
             Self::Evaluate => write!(f, "evaluate"),
             Self::Close => write!(f, "close"),
             Self::Synthesize => write!(f, "synthesize"),
+            Self::Brainstorm => write!(f, "brainstorm"),
         }
     }
 }
@@ -133,6 +141,8 @@ pub enum ConvergenceStatus {
     Synthesized,
     /// No answers met the synthesis threshold after converge rounds.
     NoQualifyingAnswers,
+    /// Brainstorm completed successfully.
+    Brainstormed,
 }
 
 /// The final output of a consensus run.
@@ -336,6 +346,19 @@ mod tests {
         let models = vec![ModelId::new("test/solo")];
         let config = EngineConfig::new(models, 5, 8.0, 2, Duration::from_secs(120), 10).unwrap();
         assert_eq!(config.estimate_calls_per_round(), 1);
+    }
+
+    #[test]
+    fn convergence_status_brainstormed_serialization() {
+        assert_eq!(
+            serde_json::to_string(&ConvergenceStatus::Brainstormed).unwrap(),
+            "\"brainstormed\""
+        );
+    }
+
+    #[test]
+    fn phase_brainstorm_display() {
+        assert_eq!(Phase::Brainstorm.to_string(), "brainstorm");
     }
 
     #[test]
