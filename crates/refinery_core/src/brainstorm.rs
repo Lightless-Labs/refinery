@@ -130,13 +130,11 @@ pub async fn run(
 
         // ── Evaluate ────────────────────────────────────────────────────
 
-        // Single model: skip evaluation (no self-eval)
+        // Single model: skip evaluation (no self-eval).
+        // Record answer in history without a score — the model still sees
+        // its prior answers but gets no misleading 0.0 feedback.
         if round_proposals.len() == 1 {
             for (model_id, answer) in &round_proposals {
-                score_histories
-                    .entry(model_id.clone())
-                    .or_default()
-                    .push((answer.clone(), 0.0));
                 latest_answers.insert(model_id.clone(), answer.clone());
             }
             last_round_eval_scores.clear();

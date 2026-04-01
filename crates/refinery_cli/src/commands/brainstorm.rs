@@ -72,6 +72,10 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
             }
         };
         let n = model_ids.len();
+        if n == 0 {
+            eprintln!("Error: at least one model must be specified with --models");
+            return ExitCode::from(4);
+        }
         #[allow(clippy::cast_possible_truncation)]
         let calls_per_round = (n + n * (n - 1)) as u32;
         let total = calls_per_round * args.max_rounds;
