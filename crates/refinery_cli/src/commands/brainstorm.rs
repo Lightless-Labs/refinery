@@ -22,8 +22,8 @@ pub struct BrainstormArgs {
     max_rounds: u32,
 
     /// Number of diverse answers to return [default: 3]
-    #[arg(long, default_value = "3")]
-    panel_size: usize,
+    #[arg(long, default_value = "3", value_parser = clap::value_parser!(u32).range(1..=20))]
+    panel_size: u32,
 }
 
 // ── JSON output types ───────────────────────────────────────────────────
@@ -99,7 +99,7 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
 
     let config = BrainstormConfig {
         max_rounds: args.max_rounds,
-        panel_size: args.panel_size,
+        panel_size: args.panel_size as usize,
         max_concurrent: shared.max_concurrent,
         timeout: Duration::from_secs(shared.timeout),
     };
