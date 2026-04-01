@@ -76,11 +76,10 @@ pub async fn run(
             let sem = semaphore.clone();
             let p = provider.clone();
 
-            let user_content = if let Some(history) = score_histories.get(&model_id) {
-                prompts::propose_with_score_history_prompt(prompt, history)
-            } else {
-                prompt.to_string()
-            };
+            let history = score_histories.get(&model_id);
+            let empty = Vec::new();
+            let user_content =
+                prompts::propose_with_score_history_prompt(prompt, history.unwrap_or(&empty));
 
             let messages = vec![
                 Message::system(prompts::brainstorm_system_prompt()),
