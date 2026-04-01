@@ -112,7 +112,7 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
     display.finish();
 
     match result {
-        Ok(br) => emit_success(shared, &br, args.max_rounds, start_time.elapsed()),
+        Ok(br) => emit_success(shared, &br, start_time.elapsed()),
         Err(e) => {
             emit_error(shared, "brainstorm_failed", &e.to_string(), "brainstorm");
             ExitCode::from(1)
@@ -123,7 +123,6 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
 fn emit_success(
     shared: &SharedArgs,
     result: &BrainstormResult,
-    max_rounds: u32,
     elapsed: std::time::Duration,
 ) -> ExitCode {
     if result.panel.is_empty() {
@@ -160,7 +159,7 @@ fn emit_success(
                     })
                     .collect(),
                 metadata: MetadataOutput {
-                    total_rounds: max_rounds,
+                    total_rounds: result.rounds_completed,
                     total_calls: result.total_calls,
                     elapsed_ms: elapsed.as_millis(),
                     models_dropped: vec![],
@@ -172,7 +171,7 @@ fn emit_success(
         }
         OutputFormat::Text => {
             println!("Status: Brainstormed");
-            println!("Rounds: {max_rounds}");
+            println!("Rounds: {}", result.rounds_completed);
             println!("Total calls: {}", result.total_calls);
             println!("Elapsed: {elapsed:?}");
             println!("\n── Panel ({} answers) ──\n", result.panel.len());
