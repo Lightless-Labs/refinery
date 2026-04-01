@@ -24,6 +24,7 @@ pub struct BrainstormConfig {
 pub struct BrainstormResult {
     pub panel: Vec<PanelCandidate>,
     pub total_calls: u32,
+    pub rounds_completed: u32,
 }
 
 /// Error from the brainstorm loop.
@@ -269,7 +270,11 @@ pub async fn run(
 
     let panel = scoring::select_panel(&mut candidates, config.panel_size);
 
-    Ok(BrainstormResult { panel, total_calls })
+    Ok(BrainstormResult {
+        panel,
+        total_calls,
+        rounds_completed: config.max_rounds,
+    })
 }
 
 #[cfg(test)]
