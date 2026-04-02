@@ -9,7 +9,7 @@ use refinery_core::types::ModelId;
 
 use super::common::{
     ErrorResponse, MetadataOutput, OutputFormat, SharedArgs, build_providers, init_tracing,
-    resolve_prompt,
+    make_run_dir, resolve_prompt,
 };
 
 #[derive(Parser, Debug)]
@@ -101,11 +101,17 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
     let start_time = std::time::Instant::now();
     let tick_handle = display.start_tick();
 
+    let output_dir = shared
+        .output_dir
+        .as_ref()
+        .map(|dir| make_run_dir(dir, shared.prompt.as_deref()));
+
     let config = BrainstormConfig {
         max_rounds: args.max_rounds,
         panel_size: args.panel_size as usize,
         max_concurrent: shared.max_concurrent,
         timeout: Duration::from_secs(shared.timeout),
+        output_dir,
     };
 
     let result = refinery_core::brainstorm::run(&providers, &prompt, &config).await;
