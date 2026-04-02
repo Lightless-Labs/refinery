@@ -17,6 +17,18 @@ pub struct BrainstormConfig {
     pub panel_size: usize,
     pub max_concurrent: usize,
     pub timeout: Duration,
+    /// If set, artifacts are saved per-round as each round completes.
+    pub output_dir: Option<std::path::PathBuf>,
+}
+
+/// Per-round data from a brainstorm run.
+#[derive(Debug, Clone)]
+pub struct BrainstormRound {
+    pub round: u32,
+    /// Model ID → proposal text.
+    pub proposals: HashMap<ModelId, String>,
+    /// Evaluatee → Vec<(evaluator, score)>.
+    pub eval_scores: HashMap<ModelId, Vec<(ModelId, f64)>>,
 }
 
 /// Result of a brainstorm run.
@@ -25,6 +37,7 @@ pub struct BrainstormResult {
     pub panel: Vec<PanelCandidate>,
     pub total_calls: u32,
     pub rounds_completed: u32,
+    pub rounds: Vec<BrainstormRound>,
 }
 
 /// Error from the brainstorm loop.
@@ -66,6 +79,7 @@ pub async fn run(
     let mut latest_answers: HashMap<ModelId, String> = HashMap::new();
     let mut last_round_eval_scores: HashMap<ModelId, Vec<(ModelId, f64)>> = HashMap::new();
     let mut total_calls: u32 = 0;
+    let mut round_data: Vec<BrainstormRound> = Vec::new();
 
     for round in 1..=config.max_rounds {
         // ── Propose ─────────────────────────────────────────────────────
@@ -131,12 +145,21 @@ pub async fn run(
         // ── Evaluate ────────────────────────────────────────────────────
 
         // Single model: skip evaluation (no self-eval).
-        // Record answer in history without a score — the model still sees
-        // its prior answers but gets no misleading 0.0 feedback.
         if round_proposals.len() == 1 {
             for (model_id, answer) in &round_proposals {
                 latest_answers.insert(model_id.clone(), answer.clone());
             }
+            let rd = BrainstormRound {
+                round,
+                proposals: round_proposals,
+                eval_scores: HashMap::new(),
+            };
+            if let Some(ref dir) = config.output_dir {
+                if let Err(e) = save_round_artifacts(dir, &rd) {
+                    eprintln!("Warning: failed to save round {round} artifacts: {e}");
+                }
+            }
+            round_data.push(rd);
             last_round_eval_scores.clear();
             continue;
         }
@@ -238,7 +261,24 @@ pub async fn run(
             latest_answers.insert(model_id.clone(), answer.clone());
         }
 
-        last_round_eval_scores = round_scores;
+        last_round_eval_scores = round_scores.clone();
+
+        // Save artifacts immediately as this round completes
+        if let Some(ref dir) = config.output_dir {
+            let rd = BrainstormRound {
+                round,
+                proposals: round_proposals.clone(),
+                eval_scores: round_scores,
+            };
+            if let Err(e) = save_round_artifacts(dir, &rd) {
+                eprintln!("Warning: failed to save round {round} artifacts: {e}");
+            }
+        }
+        round_data.push(BrainstormRound {
+            round,
+            proposals: round_proposals,
+            eval_scores: last_round_eval_scores.clone(),
+        });
     }
 
     // ── Panel selection ─────────────────────────────────────────────────
@@ -268,11 +308,75 @@ pub async fn run(
 
     let panel = scoring::select_panel(&mut candidates, config.panel_size);
 
+    // Save panel summary
+    if let Some(ref dir) = config.output_dir {
+        if let Err(e) = save_panel_summary(dir, &panel) {
+            eprintln!("Warning: failed to save panel summary: {e}");
+        }
+    }
+
     Ok(BrainstormResult {
         panel,
         total_calls,
         rounds_completed: config.max_rounds,
+        rounds: round_data,
     })
+}
+
+fn save_round_artifacts(
+    base_dir: &std::path::Path,
+    round: &BrainstormRound,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let round_dir = base_dir.join(format!("round-{}", round.round));
+    std::fs::create_dir_all(&round_dir)?;
+
+    for (model_id, text) in &round.proposals {
+        let safe_id = model_id.to_string().replace('/', "_");
+        std::fs::write(round_dir.join(format!("propose-{safe_id}.md")), text)?;
+    }
+
+    for (evaluatee, scores) in &round.eval_scores {
+        let safe_evaluatee = evaluatee.to_string().replace('/', "_");
+        for (evaluator, score) in scores {
+            let safe_evaluator = evaluator.to_string().replace('/', "_");
+            let content = serde_json::json!({
+                "evaluator": evaluator.to_string(),
+                "evaluatee": evaluatee.to_string(),
+                "score": score,
+            });
+            std::fs::write(
+                round_dir.join(format!("evaluate-{safe_evaluator}-{safe_evaluatee}.json")),
+                serde_json::to_string_pretty(&content)?,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn save_panel_summary(
+    base_dir: &std::path::Path,
+    panel: &[scoring::PanelCandidate],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let panel_json: Vec<serde_json::Value> = panel
+        .iter()
+        .map(|c| {
+            serde_json::json!({
+                "model_id": c.model_id.to_string(),
+                "mean_score": c.mean_score,
+                "stddev": c.stddev,
+                "controversy_score": c.controversy_score,
+                "per_evaluator_scores": c.per_evaluator_scores.iter()
+                    .map(|(id, s)| serde_json::json!({"evaluator": id.to_string(), "score": s}))
+                    .collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    std::fs::write(
+        base_dir.join("panel.json"),
+        serde_json::to_string_pretty(&panel_json)?,
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -292,6 +396,7 @@ mod tests {
             panel_size,
             max_concurrent: 0,
             timeout: Duration::from_secs(120),
+            output_dir: None,
         }
     }
 
