@@ -67,9 +67,8 @@ Panel of `--panel-size` answers, selected for quality + disagreement. Each with 
 ## Open Questions
 
 - How to measure diversity without embeddings? (May not need to for v0 — controversy score handles it indirectly)
-- Does the closing strategy need a diversity metric alongside score, or is controversy scoring sufficient?
+- Does the selection strategy need a diversity metric alongside score, or is controversy scoring sufficient?
 - What's the right default for `--panel-size`?
-- Should there be a `--diversity-threshold` or is panel-size + controversy scoring enough?
 
 ## References
 
