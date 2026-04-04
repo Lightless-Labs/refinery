@@ -29,9 +29,11 @@ Future iteration strategies to explore and benchmark (see TODO 013):
 
 **v0 choice: Reddit "Controversial" algorithm.** Select answers with high quality (many high scores) BUT high disagreement (high variance across evaluators). An answer that half the models love and half dislike is more interesting than one everyone rates 7.
 
-Possible implementations of "controversial":
-- **Controversy score:** `upvotes / (upvotes + downvotes)` close to 0.5 with high total
-- **Score variance:** keep answers where evaluator scores have high standard deviation
+**v0 formula:** `controversy = mean * stddev` (population stddev of per-evaluator scores). Panel selection uses two-key sort `(controversy, mean)` descending for deterministic tiebreaking. Isolated in `refinery_core::scoring` — easy to swap.
+
+Other possible implementations (deferred):
+- **Reddit-style:** adapted from `upvotes / (upvotes + downvotes)` — needs binary mapping from continuous scores
+- **Pure variance:** keep answers where evaluator scores have high standard deviation regardless of mean
 
 Future selection strategies to explore and benchmark (see TODO 013):
 - Semantic deduplication (cluster similar answers, keep one per cluster)
