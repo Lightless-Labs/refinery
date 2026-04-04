@@ -26,7 +26,7 @@ Key distinction from converge: converge is **Lamarckian** (directed improvement 
 
 - **Independent lineages:** models never see each other's answers. Each evolutionary tree is isolated.
 - **No directed feedback:** surviving models get scores but no rationale or suggestions. The only signal is "how well did I do."
-- **Death = restart:** culled models don't get dropped — they start fresh from the prompt, injecting diversity naturally. A model starting from scratch in round 4 will produce something different than round 1.
+- **Death = restart:** culled models don't get dropped — they start fresh from the prompt, injecting diversity naturally. A model starting from scratch in round 4 will produce something different from round 1.
 - **The wall:** variation (proposing) and selection (evaluating) are strictly separated. Evaluating models never inform proposing models beyond a number.
 
 ## Selection Strategy

@@ -206,14 +206,14 @@ pub async fn run(args: ConvergeArgs) -> ExitCode {
             }
 
             match outcome.status {
-                ConvergenceStatus::Converged
-                | ConvergenceStatus::SingleModel
-                | ConvergenceStatus::Brainstormed => ExitCode::SUCCESS,
+                ConvergenceStatus::Converged | ConvergenceStatus::SingleModel => ExitCode::SUCCESS,
                 ConvergenceStatus::MaxRoundsExceeded | ConvergenceStatus::NoQualifyingAnswers => {
                     ExitCode::from(2)
                 }
                 ConvergenceStatus::InsufficientModels => ExitCode::from(3),
-                ConvergenceStatus::Cancelled | ConvergenceStatus::Synthesized => ExitCode::from(1),
+                ConvergenceStatus::Cancelled
+                | ConvergenceStatus::Synthesized
+                | ConvergenceStatus::Brainstormed => ExitCode::from(1),
             }
         }
         Err(e) => {
