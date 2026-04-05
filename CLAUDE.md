@@ -39,9 +39,10 @@ cargo run -p linear_agent --release -- --team-id $LINEAR_TEAM_ID --poll-interval
 
 ## Key Directories
 
+- `docs/HANDOFF.md` - **Read first.** Agent handoff doc — project state, architecture gotchas, open work, review process. Update before compaction or at session end.
 - `todos/` - Pending work items
 - `docs/plans/` - Implementation plans
-- `docs/solutions/` - Documented learnings
+- `docs/solutions/` - Documented learnings (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Search before implementing or debugging in documented areas.
 
 ## Process
 
