@@ -1,17 +1,20 @@
 [package]
-name = "refinery_providers"
+name = "tundish_providers"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+description = "Provider implementations for multi-model prompt dispatch"
 
 [features]
-default = ["claude", "codex", "gemini"]
+default = ["claude", "codex", "gemini", "opencode"]
 claude = []
 codex = []
 gemini = []
+opencode = []
 
 [dependencies]
-refinery_core = { workspace = true }
+tundish_core = { workspace = true }
+libc = "0.2"
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

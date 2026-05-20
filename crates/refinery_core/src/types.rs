@@ -6,68 +6,17 @@ use serde::{Deserialize, Serialize};
 use crate::error::ProviderError;
 use crate::strategy::ClosingDecision;
 
-/// Unique identifier for a model participating in consensus.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ModelId(String);
+// Re-export dispatch types from tundish_core
+pub use tundish_core::{Message, ModelId, Role};
 
-impl ModelId {
-    #[must_use]
-    pub fn new(id: impl Into<String>) -> Self {
-        Self(id.into())
-    }
+/// Per-round trajectory entry: the model's own proposal and reviews received as `(label, text)`.
+pub type RoundHistory = Vec<(String, Vec<(String, String)>)>;
 
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Display for ModelId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-/// Role in a conversation message.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Role {
-    System,
-    User,
-    Assistant,
-}
-
-/// A single message in a conversation.
-#[derive(Debug, Clone)]
-pub struct Message {
-    pub role: Role,
-    pub content: String,
-}
-
-impl Message {
-    #[must_use]
-    pub fn system(content: impl Into<String>) -> Self {
-        Self {
-            role: Role::System,
-            content: content.into(),
-        }
-    }
-
-    #[must_use]
-    pub fn user(content: impl Into<String>) -> Self {
-        Self {
-            role: Role::User,
-            content: content.into(),
-        }
-    }
-
-    #[must_use]
-    pub fn assistant(content: impl Into<String>) -> Self {
-        Self {
-            role: Role::Assistant,
-            content: content.into(),
-        }
-    }
-}
+/// Score-only trajectory: list of `(proposal_text, mean_score)` per round.
+///
+/// Used by the brainstorm verb where models see only their own prior answers
+/// and aggregate scores — no reviews, no other models' content.
+pub type ScoreHistory = Vec<(String, f64)>;
 
 /// A score in the range 1-10 (inclusive).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,21 +77,12 @@ pub struct EvaluationSet {
     pub dropped: Vec<(ModelId, ModelId, ProviderError)>,
 }
 
-/// Output of the REFINE phase.
-#[derive(Debug, Clone)]
-pub struct RefinementSet {
-    pub refinements: HashMap<ModelId, String>,
-    /// Models that kept their previous answer due to refine failure.
-    pub unrefined: Vec<ModelId>,
-}
-
 /// The complete output of one round, returned by `Session::next_round()`.
 #[derive(Debug, Clone)]
 pub struct RoundOutcome {
     pub round: u32,
     pub proposals: ProposalSet,
     pub evaluations: EvaluationSet,
-    pub refinements: RefinementSet,
     pub closing_decision: ClosingDecision,
     pub elapsed: Duration,
     pub call_count: u32,
@@ -166,8 +106,9 @@ pub struct RoundData {
 pub enum Phase {
     Propose,
     Evaluate,
-    Refine,
     Close,
+    Synthesize,
+    Brainstorm,
 }
 
 impl std::fmt::Display for Phase {
@@ -175,8 +116,9 @@ impl std::fmt::Display for Phase {
         match self {
             Self::Propose => write!(f, "propose"),
             Self::Evaluate => write!(f, "evaluate"),
-            Self::Refine => write!(f, "refine"),
             Self::Close => write!(f, "close"),
+            Self::Synthesize => write!(f, "synthesize"),
+            Self::Brainstorm => write!(f, "brainstorm"),
         }
     }
 }
@@ -195,14 +137,22 @@ pub enum ConvergenceStatus {
     InsufficientModels,
     /// Run was cancelled via `Session::cancel()`.
     Cancelled,
+    /// Synthesis completed successfully.
+    Synthesized,
+    /// No answers met the synthesis threshold after converge rounds.
+    NoQualifyingAnswers,
+    /// Brainstorm completed successfully.
+    Brainstormed,
 }
 
 /// The final output of a consensus run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsensusOutcome {
     pub status: ConvergenceStatus,
-    pub winner: ModelId,
-    pub answer: String,
+    /// The winning model. `None` when `MaxRoundsExceeded` (no consensus reached).
+    pub winner: Option<ModelId>,
+    /// The winning answer. `None` when `MaxRoundsExceeded`.
+    pub answer: Option<String>,
     pub final_round: u32,
     pub all_answers: Vec<ModelAnswer>,
     pub total_calls: u32,
@@ -229,6 +179,7 @@ pub struct EngineConfig {
 }
 
 impl EngineConfig {
+    #[allow(clippy::result_large_err)]
     pub fn new(
         models: Vec<ModelId>,
         max_rounds: u32,
@@ -276,8 +227,8 @@ impl EngineConfig {
         if n == 1 {
             return 1; // single-model short-circuit: 1 PROPOSE call, no loop
         }
-        // N (propose) + N*(N-1) (evaluate) + N (refine) = N² + N
-        n * n + n
+        // N (propose) + N*(N-1) (evaluate) = N²
+        n * n
     }
 }
 
@@ -314,23 +265,15 @@ mod tests {
     }
 
     #[test]
-    fn model_id_as_hashmap_key() {
-        let mut map = HashMap::new();
-        let id = ModelId::new("claude");
-        map.insert(id.clone(), "hello");
-        assert_eq!(map.get(&id), Some(&"hello"));
-    }
-
-    #[test]
     fn engine_config_validation() {
-        let models = vec![ModelId::new("a"), ModelId::new("b")];
+        let models = vec![ModelId::new("test/a"), ModelId::new("test/b")];
 
         // Valid config
         let config = EngineConfig::new(models.clone(), 5, 8.0, 2, Duration::from_secs(120), 10);
         assert!(config.is_ok());
 
         // Too many models
-        let too_many: Vec<_> = (0..8).map(|i| ModelId::new(format!("m{i}"))).collect();
+        let too_many: Vec<_> = (0..8).map(|i| ModelId::new(format!("test/m{i}"))).collect();
         assert!(EngineConfig::new(too_many, 5, 8.0, 2, Duration::from_secs(120), 10).is_err());
 
         // No models
@@ -377,41 +320,55 @@ mod tests {
 
     #[test]
     fn estimate_calls_per_round() {
-        let models =
-            |n: usize| -> Vec<ModelId> { (0..n).map(|i| ModelId::new(format!("m{i}"))).collect() };
+        let models = |n: usize| -> Vec<ModelId> {
+            (0..n).map(|i| ModelId::new(format!("test/m{i}"))).collect()
+        };
 
-        // N=2: 2² + 2 = 6
+        // N=2: 2² = 4
         let config = EngineConfig::new(models(2), 5, 8.0, 2, Duration::from_secs(120), 10).unwrap();
-        assert_eq!(config.estimate_calls_per_round(), 6);
+        assert_eq!(config.estimate_calls_per_round(), 4);
 
-        // N=3: 3² + 3 = 12
+        // N=3: 3² = 9
         let config = EngineConfig::new(models(3), 5, 8.0, 2, Duration::from_secs(120), 10).unwrap();
-        assert_eq!(config.estimate_calls_per_round(), 12);
+        assert_eq!(config.estimate_calls_per_round(), 9);
 
-        // N=5: 5² + 5 = 30
+        // N=5: 5² = 25
         let config = EngineConfig::new(models(5), 5, 8.0, 2, Duration::from_secs(120), 10).unwrap();
-        assert_eq!(config.estimate_calls_per_round(), 30);
+        assert_eq!(config.estimate_calls_per_round(), 25);
 
-        // N=7: 7² + 7 = 56
+        // N=7: 7² = 49
         let config = EngineConfig::new(models(7), 5, 8.0, 2, Duration::from_secs(120), 10).unwrap();
-        assert_eq!(config.estimate_calls_per_round(), 56);
+        assert_eq!(config.estimate_calls_per_round(), 49);
     }
 
     #[test]
     fn estimate_calls_single_model_is_one() {
-        let models = vec![ModelId::new("solo")];
+        let models = vec![ModelId::new("test/solo")];
         let config = EngineConfig::new(models, 5, 8.0, 2, Duration::from_secs(120), 10).unwrap();
         assert_eq!(config.estimate_calls_per_round(), 1);
     }
 
     #[test]
+    fn convergence_status_brainstormed_serialization() {
+        assert_eq!(
+            serde_json::to_string(&ConvergenceStatus::Brainstormed).unwrap(),
+            "\"brainstormed\""
+        );
+    }
+
+    #[test]
+    fn phase_brainstorm_display() {
+        assert_eq!(Phase::Brainstorm.to_string(), "brainstorm");
+    }
+
+    #[test]
     fn proposal_set_carries_failures() {
         let set = ProposalSet {
-            proposals: HashMap::from([(ModelId::new("a"), "answer".to_string())]),
+            proposals: HashMap::from([(ModelId::new("test/a"), "answer".to_string())]),
             dropped: vec![(
-                ModelId::new("b"),
+                ModelId::new("test/b"),
                 ProviderError::Timeout {
-                    model: ModelId::new("b"),
+                    model: ModelId::new("test/b"),
                     elapsed: Duration::from_secs(120),
                 },
             )],

@@ -249,9 +249,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.181"
+version = "0.2.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "459427e2af2b9c839b132acb702a1c654d95e10f8c326bfc2ad11310e458b1c5"
+checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
 
 [[package]]
 name = "log"
@@ -394,13 +394,16 @@ name = "refinery_cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "libc",
+ "rand",
  "refinery_core",
- "refinery_providers",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "tundish_core",
+ "tundish_providers",
 ]
 
 [[package]]
@@ -415,18 +418,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "refinery_providers"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "refinery_core",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
+ "tundish_core",
 ]
 
 [[package]]
@@ -757,6 +749,43 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-serde",
+]
+
+[[package]]
+name = "tundish_cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "tundish_core",
+ "tundish_providers",
+]
+
+[[package]]
+name = "tundish_core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "tundish_providers"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "libc",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tundish_core",
 ]
 
 [[package]]

@@ -6,6 +6,7 @@ use tracing::{info, warn};
 
 use crate::ModelProvider;
 use crate::error::ProviderError;
+use crate::progress::{self, ProgressEvent, ProgressFn};
 use crate::prompts;
 use crate::types::{Evaluation, EvaluationSet, Message, ModelId, Review, Score};
 
@@ -20,6 +21,7 @@ pub async fn run(
     round_ctx: &str,
     semaphore: &Arc<Semaphore>,
     timeout: std::time::Duration,
+    progress: Option<ProgressFn>,
 ) -> EvaluationSet {
     let mut evaluations = HashMap::new();
     let mut dropped = Vec::new();
@@ -67,7 +69,11 @@ pub async fn run(
 
             handles.spawn(async move {
                 let _permit = sem.acquire().await.expect("semaphore closed");
-                let result = tokio::time::timeout(timeout, provider.send_message(&messages)).await;
+                let result = tokio::time::timeout(
+                    timeout,
+                    provider.send_message(&messages, Some(prompts::EVALUATE_SCHEMA)),
+                )
+                .await;
 
                 match result {
                     Ok(Ok(response)) => match parse_evaluation(&response, &evaluator) {
@@ -114,9 +120,24 @@ pub async fn run(
     while let Some(result) = handles.join_next().await {
         match result {
             Ok(Ok((evaluator, evaluatee, evaluation))) => {
+                if let Some(ref cb) = progress {
+                    cb(ProgressEvent::EvaluationCompleted {
+                        reviewer: evaluator.clone(),
+                        reviewee: evaluatee.clone(),
+                        score: f64::from(evaluation.score.value()),
+                        preview: progress::preview(&evaluation.review.overall_assessment, 60),
+                    });
+                }
                 evaluations.insert((evaluator, evaluatee), evaluation);
             }
             Ok(Err((evaluator, evaluatee, err))) => {
+                if let Some(ref cb) = progress {
+                    cb(ProgressEvent::EvaluationFailed {
+                        reviewer: evaluator.clone(),
+                        reviewee: evaluatee.clone(),
+                        error: err.to_string(),
+                    });
+                }
                 dropped.push((evaluator, evaluatee, err));
             }
             Err(join_err) => {
@@ -141,7 +162,7 @@ pub async fn run(
 /// Parse an evaluation response (JSON) into an `Evaluation`.
 fn parse_evaluation(response: &str, model: &ModelId) -> Result<Evaluation, ProviderError> {
     // Check response size
-    const MAX_RESPONSE_SIZE: usize = 100_000;
+    const MAX_RESPONSE_SIZE: usize = 1_000_000;
     if response.len() > MAX_RESPONSE_SIZE {
         return Err(ProviderError::ResponseTooLarge {
             model: model.clone(),
@@ -204,11 +225,27 @@ fn parse_evaluation(response: &str, model: &ModelId) -> Result<Evaluation, Provi
 
     let rationale = parsed["rationale"].as_str().unwrap_or("").to_string();
 
+    // Accept score as integer (8) or float (8.0) — models may emit either
     let score_value = parsed["score"]
         .as_u64()
+        .or_else(|| {
+            parsed["score"].as_f64().and_then(|f| {
+                let rounded = f.round();
+                // Scores are 1–10; reject negative or out-of-range floats
+                if (0.0..=10.0).contains(&rounded) {
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    Some(rounded as u64)
+                } else {
+                    None
+                }
+            })
+        })
         .ok_or_else(|| ProviderError::InvalidJson {
             model: model.clone(),
-            message: "missing or invalid 'score' field".to_string(),
+            message: format!(
+                "missing or invalid 'score' field (got: {})",
+                parsed["score"]
+            ),
         })?;
 
     let score_u8 = u8::try_from(score_value).map_err(|_| ProviderError::InvalidJson {
@@ -249,7 +286,7 @@ mod tests {
   "score": 7
 }
 ```"#;
-        let model = ModelId::new("test");
+        let model = ModelId::new("test/eval");
         let eval = parse_evaluation(json, &model).unwrap();
         assert_eq!(eval.score.value(), 7);
         assert_eq!(eval.review.strengths.len(), 2);
@@ -257,24 +294,32 @@ mod tests {
     }
 
     #[test]
+    fn parse_valid_evaluation_float_score() {
+        let json = r#"{"strengths": ["clear"], "weaknesses": [], "suggestions": [], "overall_assessment": "Good.", "rationale": "Clear.", "score": 8.0}"#;
+        let model = ModelId::new("test/eval");
+        let eval = parse_evaluation(json, &model).unwrap();
+        assert_eq!(eval.score.value(), 8);
+    }
+
+    #[test]
     fn parse_evaluation_invalid_score() {
         let json = r#"{"strengths": [], "weaknesses": [], "suggestions": [], "overall_assessment": "", "rationale": "", "score": 15}"#;
-        let model = ModelId::new("test");
+        let model = ModelId::new("test/eval");
         let result = parse_evaluation(json, &model);
         assert!(result.is_err());
     }
 
     #[test]
     fn parse_evaluation_no_json() {
-        let model = ModelId::new("test");
+        let model = ModelId::new("test/eval");
         let result = parse_evaluation("No JSON here", &model);
         assert!(result.is_err());
     }
 
     #[test]
     fn parse_evaluation_too_large() {
-        let model = ModelId::new("test");
-        let large = "x".repeat(200_000);
+        let model = ModelId::new("test/eval");
+        let large = "x".repeat(1_100_000);
         let result = parse_evaluation(&large, &model);
         assert!(matches!(
             result,

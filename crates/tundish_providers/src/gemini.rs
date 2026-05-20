@@ -2,9 +2,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use refinery_core::ModelProvider;
-use refinery_core::error::ProviderError;
-use refinery_core::types::{Message, ModelId};
+use tundish_core::ModelProvider;
+use tundish_core::error::ProviderError;
+use tundish_core::progress::ProgressFn;
+use tundish_core::types::{Message, ModelId};
 
 use crate::credential::{self, Credential};
 use crate::process;
@@ -16,13 +17,23 @@ use crate::process;
 ///
 /// Supports: `GEMINI_API_KEY` (Google AI Studio) or `GOOGLE_API_KEY` (Vertex AI express mode).
 /// When neither is set, falls back to the Gemini CLI's own stored credentials (gcloud auth).
-#[derive(Debug)]
 pub struct GeminiProvider {
     model_id: ModelId,
     binary_path: PathBuf,
     credential: Option<Credential>,
     model_name: String,
-    timeout: Duration,
+    max_timeout: Duration,
+    idle_timeout: Duration,
+    progress: Option<ProgressFn>,
+}
+
+impl std::fmt::Debug for GeminiProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GeminiProvider")
+            .field("model_id", &self.model_id)
+            .field("model_name", &self.model_name)
+            .finish_non_exhaustive()
+    }
 }
 
 impl GeminiProvider {
@@ -30,23 +41,32 @@ impl GeminiProvider {
     ///
     /// Credentials are optional: if no env var is set the Gemini CLI will use its own
     /// stored authentication (e.g. gcloud credentials).
-    pub async fn new(model_name: &str, timeout: Duration) -> Result<Self, ProviderError> {
+    pub fn new(
+        model_id: ModelId,
+        _canonical_tools: &[String],
+        max_timeout: Duration,
+        idle_timeout: Duration,
+        progress: Option<ProgressFn>,
+    ) -> Result<Self, ProviderError> {
         let credential =
             credential::try_resolve_credential("gemini", &["GEMINI_API_KEY", "GOOGLE_API_KEY"]);
 
-        let binary_path = process::resolve_binary("gemini").await?;
+        let binary_path = process::resolve_binary("gemini")?;
+        let model_name = model_id.model().to_string();
 
         Ok(Self {
-            model_id: ModelId::new(model_name),
+            model_id,
             binary_path,
             credential,
-            model_name: model_name.to_string(),
-            timeout,
+            model_name,
+            max_timeout,
+            idle_timeout,
+            progress,
         })
     }
 
     fn build_args(&self, user_prompt: &str) -> Vec<String> {
-        vec![
+        let mut args = vec![
             "--output-format".to_string(),
             "json".to_string(),
             "--model".to_string(),
@@ -54,23 +74,28 @@ impl GeminiProvider {
             "--sandbox".to_string(),
             "--approval-mode".to_string(),
             "plan".to_string(),
-            "--prompt".to_string(),
-            user_prompt.to_string(),
-        ]
+        ];
+
+        args.push("--prompt".to_string());
+        args.push(user_prompt.to_string());
+        args
     }
 }
 
 #[async_trait]
 impl ModelProvider for GeminiProvider {
-    async fn send_message(&self, messages: &[Message]) -> Result<String, ProviderError> {
+    async fn send_message(
+        &self,
+        messages: &[Message],
+        _schema: Option<&str>,
+    ) -> Result<String, ProviderError> {
         let (system_prompt, user_prompt) = process::extract_prompts(messages);
 
         let args = self.build_args(&user_prompt);
         let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
 
         // GEMINI_SYSTEM_MD expects a file path, not inline content — write to temp file.
-        let tmp_path =
-            std::env::temp_dir().join(format!("refinery-gemini-{}.md", std::process::id()));
+        let tmp_path = process::unique_temp_path("refinery-gemini", "md");
         std::fs::write(&tmp_path, system_prompt.as_bytes()).map_err(|e| {
             ProviderError::ProcessFailed {
                 model: self.model_id.clone(),
@@ -95,8 +120,10 @@ impl ModelProvider for GeminiProvider {
             &self.binary_path,
             &args_refs,
             &env_vars,
-            self.timeout,
+            self.max_timeout,
+            self.idle_timeout,
             &self.model_id,
+            self.progress.clone(),
         )
         .await;
 
@@ -128,11 +155,13 @@ mod tests {
     #[test]
     fn build_args_contains_required_flags() {
         let provider = GeminiProvider {
-            model_id: ModelId::new("gemini-3.1-pro-preview"),
+            model_id: ModelId::from_parts("gemini-cli", "gemini-3.1-pro-preview"),
             binary_path: PathBuf::from("/usr/local/bin/gemini"),
             credential: Some(test_credential()),
             model_name: "gemini-3.1-pro-preview".to_string(),
-            timeout: Duration::from_secs(120),
+            max_timeout: Duration::from_secs(1800),
+            idle_timeout: Duration::from_secs(120),
+            progress: None,
         };
 
         let args = provider.build_args("user prompt");

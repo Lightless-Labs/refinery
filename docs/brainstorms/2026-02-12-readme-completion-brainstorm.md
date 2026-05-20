@@ -24,7 +24,7 @@ Ankane-style READMEs (searchkick, pgvector, neighbor) are the gold standard for 
 
 ## Structure
 
-```
+```text
 # ConVerge Refinery
 [One-line description]
 

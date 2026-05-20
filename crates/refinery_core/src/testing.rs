@@ -19,6 +19,7 @@ pub struct EchoProvider {
 
 impl EchoProvider {
     /// Create an echo provider that always returns a default text response.
+    #[must_use]
     pub fn new(name: &str) -> Self {
         Self {
             model_id: ModelId::new(name),
@@ -30,6 +31,7 @@ impl EchoProvider {
     /// Create a provider whose default response is a valid evaluation JSON.
     ///
     /// This makes the provider work in evaluate phases without parse errors.
+    #[must_use]
     pub fn with_json_eval(name: &str, score: u8) -> Self {
         let json_response = format!(
             r#"```json
@@ -58,7 +60,11 @@ impl EchoProvider {
 
 #[async_trait]
 impl ModelProvider for EchoProvider {
-    async fn send_message(&self, _messages: &[Message]) -> Result<String, ProviderError> {
+    async fn send_message(
+        &self,
+        _messages: &[Message],
+        _schema: Option<&str>,
+    ) -> Result<String, ProviderError> {
         let mut queue = self.responses.lock().unwrap();
         Ok(queue
             .pop_front()
@@ -77,6 +83,7 @@ pub struct FailingProvider {
 }
 
 impl FailingProvider {
+    #[must_use]
     pub fn new(name: &str) -> Self {
         Self {
             model_id: ModelId::new(name),
@@ -86,7 +93,11 @@ impl FailingProvider {
 
 #[async_trait]
 impl ModelProvider for FailingProvider {
-    async fn send_message(&self, _messages: &[Message]) -> Result<String, ProviderError> {
+    async fn send_message(
+        &self,
+        _messages: &[Message],
+        _schema: Option<&str>,
+    ) -> Result<String, ProviderError> {
         Err(ProviderError::ProcessFailed {
             model: self.model_id.clone(),
             message: "mock failure".to_string(),
@@ -108,6 +119,7 @@ pub struct FailAfterNProvider {
 }
 
 impl FailAfterNProvider {
+    #[must_use]
     pub fn new(name: &str, max_successes: usize) -> Self {
         Self {
             model_id: ModelId::new(name),
@@ -119,7 +131,11 @@ impl FailAfterNProvider {
 
 #[async_trait]
 impl ModelProvider for FailAfterNProvider {
-    async fn send_message(&self, _messages: &[Message]) -> Result<String, ProviderError> {
+    async fn send_message(
+        &self,
+        _messages: &[Message],
+        _schema: Option<&str>,
+    ) -> Result<String, ProviderError> {
         let count = self.call_count.fetch_add(1, Ordering::SeqCst);
         if count < self.max_successes {
             Ok(format!("Response {} from {}", count, self.model_id))
@@ -145,6 +161,7 @@ pub struct AlwaysConvergeAfterN {
 }
 
 impl AlwaysConvergeAfterN {
+    #[must_use]
     pub fn new(min_rounds: u32) -> Self {
         Self { min_rounds }
     }
@@ -159,7 +176,7 @@ impl ClosingStrategy for AlwaysConvergeAfterN {
                 .keys()
                 .next()
                 .cloned()
-                .unwrap_or_else(|| ModelId::new("mock_winner"));
+                .unwrap_or_else(|| ModelId::from_parts("mock", "winner"));
             ClosingDecision::Converged {
                 winner,
                 explanation: "Mock convergence".to_string(),
@@ -180,40 +197,46 @@ mod tests {
 
     #[tokio::test]
     async fn echo_provider_returns_default() {
-        let provider = EchoProvider::new("test");
-        let result = provider.send_message(&[]).await.unwrap();
-        assert!(result.contains("Echo response from test"));
+        let provider = EchoProvider::new("test/echo");
+        let result = provider.send_message(&[], None).await.unwrap();
+        assert!(result.contains("Echo response from test/echo"));
     }
 
     #[tokio::test]
     async fn echo_provider_returns_queued() {
-        let provider = EchoProvider::new("test");
+        let provider = EchoProvider::new("test/echo");
         provider.queue_response("first".to_string());
         provider.queue_response("second".to_string());
 
-        assert_eq!(provider.send_message(&[]).await.unwrap(), "first");
-        assert_eq!(provider.send_message(&[]).await.unwrap(), "second");
-        assert!(provider.send_message(&[]).await.unwrap().contains("Echo"));
+        assert_eq!(provider.send_message(&[], None).await.unwrap(), "first");
+        assert_eq!(provider.send_message(&[], None).await.unwrap(), "second");
+        assert!(
+            provider
+                .send_message(&[], None)
+                .await
+                .unwrap()
+                .contains("Echo")
+        );
     }
 
     #[tokio::test]
     async fn failing_provider_always_fails() {
-        let provider = FailingProvider::new("fail");
-        assert!(provider.send_message(&[]).await.is_err());
+        let provider = FailingProvider::new("test/fail");
+        assert!(provider.send_message(&[], None).await.is_err());
     }
 
     #[tokio::test]
     async fn fail_after_n_succeeds_then_fails() {
-        let provider = FailAfterNProvider::new("countdown", 2);
-        assert!(provider.send_message(&[]).await.is_ok());
-        assert!(provider.send_message(&[]).await.is_ok());
-        assert!(provider.send_message(&[]).await.is_err());
+        let provider = FailAfterNProvider::new("test/countdown", 2);
+        assert!(provider.send_message(&[], None).await.is_ok());
+        assert!(provider.send_message(&[], None).await.is_ok());
+        assert!(provider.send_message(&[], None).await.is_err());
     }
 
     #[tokio::test]
     async fn trait_object_safety() {
-        let provider: Box<dyn ModelProvider> = Box::new(EchoProvider::new("test"));
-        assert_eq!(provider.model_id(), &ModelId::new("test"));
-        assert!(provider.send_message(&[]).await.is_ok());
+        let provider: Box<dyn ModelProvider> = Box::new(EchoProvider::new("test/echo"));
+        assert_eq!(provider.model_id(), &ModelId::new("test/echo"));
+        assert!(provider.send_message(&[], None).await.is_ok());
     }
 }

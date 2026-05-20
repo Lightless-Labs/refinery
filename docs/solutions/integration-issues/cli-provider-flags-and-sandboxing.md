@@ -19,7 +19,7 @@ When invoking AI CLI tools (Claude CLI, Codex CLI, Gemini CLI) as subprocesses f
 
 ### Invocation pattern
 
-```
+```text
 claude -p \
   --output-format json \
   --tools "" \
@@ -133,7 +133,7 @@ fn build_args(&self, system_prompt: &str, user_prompt: &str) -> Vec<String> {
 
 ### Invocation pattern
 
-```
+```text
 codex exec \
   --json \
   --sandbox read-only \
@@ -224,7 +224,7 @@ fn build_args(&self, system_prompt: &str, user_prompt: &str) -> Vec<String> {
 
 ### Invocation pattern
 
-```
+```text
 GEMINI_SYSTEM_MD="SYSTEM PROMPT" \
 gemini \
   --output-format json \
