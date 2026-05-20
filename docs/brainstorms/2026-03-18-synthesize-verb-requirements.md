@@ -48,10 +48,10 @@ topic: synthesize-verb
 
 ### Deferred to Planning
 
-- [Affects R3](Technical) How to structure the synthesis prompt — should qualifying answers be presented anonymously (like converge evaluations) or attributed?
-- [Affects R4](Technical) What JSON schema to use for synthesis evaluation — extend EVALUATE_SCHEMA or create SYNTHESIS_EVAL_SCHEMA?
-- [Affects R5](Technical) Should the synthesis phase use the same convergence/tiebreaking logic as converge, or simpler "highest score wins"?
-- [Affects R1](Technical) Can we reuse `Engine::run()` for the converge phase and then add synthesis as a post-processing step, or does the engine need a new method?
+- [Affects R3] (Technical) How to structure the synthesis prompt — should qualifying answers be presented anonymously (like converge evaluations) or attributed?
+- [Affects R4] (Technical) What JSON schema to use for synthesis evaluation — extend EVALUATE_SCHEMA or create SYNTHESIS_EVAL_SCHEMA?
+- [Affects R5] (Technical) Should the synthesis phase use the same convergence/tiebreaking logic as converge, or simpler "highest score wins"?
+- [Affects R1] (Technical) Can we reuse `Engine::run()` for the converge phase and then add synthesis as a post-processing step, or does the engine need a new method?
 
 ## Next Steps
 

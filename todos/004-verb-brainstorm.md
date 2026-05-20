@@ -3,6 +3,9 @@ title: "feat: brainstorm verb — optimize for quality and diversity"
 priority: medium
 milestone: v0.3
 depends_on: 002-cli-subcommand-converge
+status: completed
+completed: 2026-04-24
+pr: 28
 ---
 
 # Verb: `refinery brainstorm`
@@ -36,7 +39,7 @@ Future upstream divergence expansion (see TODO 018):
 **v0 formula:** `controversy = mean * stddev` (population stddev of per-evaluator scores). Panel selection uses two-key sort `(controversy, mean)` descending for deterministic tiebreaking. Isolated in `refinery_core::scoring` — easy to swap.
 
 Other possible implementations (deferred):
-- **Reddit-style:** adapted from `upvotes / (upvotes + downvotes)` — needs binary mapping from continuous scores
+- **Reddit-style:** adapted from Reddit's controversial ranking — would need a principled mapping from continuous evaluator scores to a polarity/confidence signal
 - **Pure variance:** keep answers where evaluator scores have high standard deviation regardless of mean
 
 Future selection strategies to explore and benchmark (see TODO 013):

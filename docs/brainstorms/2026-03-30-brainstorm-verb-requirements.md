@@ -14,7 +14,7 @@ topic: brainstorm-verb
 - R1. `refinery brainstorm` runs multiple rounds where each model iterates independently on its own prior answers
 - R2. Models receive only their own prior answers and each answer's average score between rounds — no other models' content, no rationale, no suggestions (score-only iteration)
 - R3. Evaluation uses the standard evaluate phase (all models score all answers each round)
-- R4. Selection uses a "controversial" algorithm: answers that score high overall BUT have high evaluator disagreement rank higher than answers with uniform mid-range scores
+- R4. Selection uses a "controversial" algorithm: answers with high evaluator disagreement (measured by score variance) are prioritized, with preference for higher average scores when disagreement is equal
 - R5. Return a panel of `--panel-size` answers selected for quality + disagreement
 - R6. Each answer in the output panel includes score distribution metadata (mean, variance, per-evaluator scores)
 - R7. `--max-rounds` controls total iteration rounds (default higher than converge — this is exploration, not convergence)
@@ -45,13 +45,13 @@ topic: brainstorm-verb
 
 ### Deferred to Planning
 
-- [Affects R4](Technical) Concrete formula for controversy scoring — Reddit's `upvotes/(upvotes+downvotes)` needs adaptation since we have continuous scores (1-10), not binary up/down. Score variance (standard deviation) is the simplest proxy. Are there better formulas?
-- [Affects R5](Technical) How to select the final panel — top N by controversy score? Or cluster by controversy score and pick representatives? Simple top-N is the v0 default.
-- [Affects R8](Technical) What dimensions should the brainstorm evaluation rubric score on? Candidates: originality, insight, depth, provocativeness, feasibility. Needs to differ from converge's accuracy/correctness focus.
-- [Affects R2](Technical) Prompt structure for score-only iteration — how to present a model's own prior answers + scores without directing improvement. "Here are your previous attempts and how they were received" vs more neutral framing.
-- [Affects R7](Needs research) What's the right default for `--max-rounds`? Brainstorming needs more rounds than converge (exploration vs convergence), but too many rounds may cause models to exhaust their variation. Likely 5-10.
-- [Affects R5](Needs research) What's the right default for `--panel-size`? Too small (2) isn't a panel. Too large (10) dilutes quality. Likely 3-5.
-- [Affects R1](Technical) Can we reuse `Engine::run()` for the round loop, or does score-only iteration require a different engine mode? The key difference: models don't see round context (other answers + evaluations), only their own history.
+- [Affects R4] (Technical) Concrete formula for controversy scoring — Reddit-style controversial ranking needs adaptation since we have continuous scores (1-10), not binary up/down. Score variance (standard deviation) is the simplest proxy. Are there better formulas?
+- [Affects R5] (Technical) How to select the final panel — top N by controversy score? Or cluster by controversy score and pick representatives? Simple top-N is the v0 default.
+- [Affects R8] (Technical) What dimensions should the brainstorm evaluation rubric score on? Candidates: originality, insight, depth, provocativeness, feasibility. Needs to differ from converge's accuracy/correctness focus.
+- [Affects R2] (Technical) Prompt structure for score-only iteration — how to present a model's own prior answers + scores without directing improvement. "Here are your previous attempts and how they were received" vs more neutral framing.
+- [Affects R7] (Needs research) What's the right default for `--max-rounds`? Brainstorming needs more rounds than converge (exploration vs convergence), but too many rounds may cause models to exhaust their variation. Likely 5-10.
+- [Affects R5] (Needs research) What's the right default for `--panel-size`? Too small (2) isn't a panel. Too large (10) dilutes quality. Likely 3-5.
+- [Affects R1] (Technical) Can we reuse `Engine::run()` for the round loop, or does score-only iteration require a different engine mode? The key difference: models don't see round context (other answers + evaluations), only their own history.
 
 ## Next Steps
 
