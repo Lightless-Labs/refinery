@@ -3,6 +3,8 @@ title: "docs: clarify R4 controversial selection wording in brainstorm requireme
 priority: low
 milestone: v0.3
 depends_on: 004-verb-brainstorm
+status: completed
+completed: 2026-04-24
 ---
 
 # Clarify R4 Wording in Brainstorm Requirements

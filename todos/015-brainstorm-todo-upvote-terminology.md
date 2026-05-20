@@ -2,6 +2,8 @@
 title: "docs: clarify upvotes/downvotes terminology in brainstorm TODO"
 priority: low
 milestone: v0.3
+status: completed
+completed: 2026-04-24
 ---
 
 # Clarify Upvotes/Downvotes Terminology

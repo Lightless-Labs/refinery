@@ -2,7 +2,7 @@
 
 Current state of the project and active work. Read this at session start. Update before compaction or at natural breakpoints.
 
-**Last updated:** 2026-04-24
+**Last updated:** 2026-05-20
 
 ## Project State
 
@@ -14,7 +14,7 @@ Current state of the project and active work. Read this at session start. Update
 |------|----|--------|-----------|-----------|
 | `converge` | #24 | merged | own+reviews | vote-threshold |
 | `synthesize` | #26 | merged | own+reviews (converge) → custom synthesis | highest score |
-| `brainstorm` | #27 | merged/queued | score-only | controversial (mean×stddev) |
+| `brainstorm` | #28 | merged | score-only | controversial (mean×stddev) |
 
 ### Planned Verbs
 
@@ -44,13 +44,12 @@ See `memory/verb_architecture.md` for full taxonomy with consistent terminology.
 
 Check `todos/` for the full list. Key ones:
 
-- **004** — brainstorm verb (shipped, TODO has strategy taxonomy for future benchmarks)
+- **004** — brainstorm verb (merged in PR #28; TODO retained as shipped design/reference)
 - **011** — evolve verb (designed, not started)
 - **013** — brainstorm strategy benchmarks (post-v0), now including prompt-reframing and Open Collider-style domain-collision baselines
 - **018** — brainstorm divergence expansion: each model reframes the initial prompt, all models work all prompt variants; optional future domain collisions
-- **014-017** — P2/P3 nitpicks from brainstorm reviews (wording, JSON serialization, etc.)
+- **016-017** — remaining P2/P3 follow-ups from brainstorm reviews (JSON serialization consistency, dry-run JSON/typing nits)
 - **010** — TTY-gate ANSI escape codes (affects all verbs)
-- **016** — silent JSON serialization failure (affects all verbs)
 
 ## CodeRabbit Review Process
 
@@ -60,7 +59,8 @@ Triage pattern: fix P1/P2 with code, create TODOs for P3/nitpicks, reply to ever
 
 ## Recent Context
 
-- PR #27 / `feat/brainstorm-verb` includes: core loop in `refinery_core::brainstorm::run()`, scoring in `refinery_core::scoring`, prompts in `prompts/brainstorm.rs`, CLI in `commands/brainstorm.rs`
-- 2026-04-24 verification before merge: `cargo fmt --all -- --check`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings` passed after small Clippy cleanups in test/support code.
+- PR #28 / `feat/brainstorm-verb` includes: core loop in `refinery_core::brainstorm::run()`, scoring in `refinery_core::scoring`, prompts in `prompts/brainstorm.rs`, CLI in `commands/brainstorm.rs`
+- 2026-04-24: PR #28 was squashed/rebased onto `main` and merged after passing GitHub's mergeability checks.
+- 2026-04-24 verification before merge: `cargo fmt --all -- --check`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings` passed after CodeRabbit follow-up fixes.
 - Brainstorm divergence discussion captured in `docs/plans/2026-03-31-001-feat-brainstorm-verb-plan.md` addendum and `todos/018-brainstorm-divergence-expansion.md`: v0 preserves divergence through score-only controversial selection; future work should inject divergence via prompt reframing (`n(n+1)` lineages) and optional Open Collider-style domain collisions (`n(1+p)d` lineages).
 - `docs/solutions/` has solution docs covering Ctrl+C/SIGINT, provider quirks, prompt injection, tiebreaking, etc.
