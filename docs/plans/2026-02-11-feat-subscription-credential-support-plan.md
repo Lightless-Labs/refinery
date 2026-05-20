@@ -247,7 +247,7 @@ Fix the incorrect env var names and setup instructions:
 
 ### .env.example Update
 
-```
+```text
 # Provider API Keys (pay-per-use)
 ANTHROPIC_API_KEY=your-api-key-here
 OPENAI_API_KEY=your-api-key-here

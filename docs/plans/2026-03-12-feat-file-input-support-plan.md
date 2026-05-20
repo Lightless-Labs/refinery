@@ -41,7 +41,7 @@ echo "question" | converge - -m claude,codex
 
 Text prompt first (if present), then file blocks separated by double newlines:
 
-```
+```text
 {text_prompt}
 
 <file-a7f3c1 path="src/auth.rs">

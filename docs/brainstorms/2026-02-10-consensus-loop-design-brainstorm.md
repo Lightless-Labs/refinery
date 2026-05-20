@@ -25,7 +25,7 @@ We rejected direct application of Paxos/Raft because there is no need for leader
 
 Each round has four phases:
 
-```
+```text
 Round R:
   Phase 1: PROPOSE (N parallel calls)
     Each model produces an answer independently.

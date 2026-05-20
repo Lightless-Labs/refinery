@@ -35,7 +35,7 @@ Rewrite `README.md` in Ankane style (concise, imperative, code-heavy). Cover bot
 
 ### Section outline
 
-```
+```text
 # ConVerge Refinery
 [One-liner]
 

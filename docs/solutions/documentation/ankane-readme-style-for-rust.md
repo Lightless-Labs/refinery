@@ -37,7 +37,7 @@ Install the CLI
 
 ```sh
 cargo install refinery_cli
-```
+```text
 
 Requires [Rust](https://www.rust-lang.org/tools/install) 1.85+.
 ````
@@ -54,7 +54,7 @@ Imperative label (no period)
 
 ```lang
 code
-```
+```text
 ````
 
 Labels and code blocks alternate. Explanatory prose is rare; when needed it sits
@@ -80,7 +80,7 @@ numbered steps.
 
 ```sh
 cargo install refinery_cli
-```
+```text
 
 Requires [Rust](https://www.rust-lang.org/tools/install) 1.85+.
 ````
@@ -113,7 +113,7 @@ operations in a single block.
 cargo install refinery_cli
 converge "prompt" --models claude,codex
 converge "prompt" --models claude,codex --output-format json
-```
+```text
 ````
 
 **After (one concept per block):**
@@ -123,19 +123,19 @@ Install the CLI
 
 ```sh
 cargo install refinery_cli
-```
+```text
 
 Run a consensus session
 
 ```sh
 converge "prompt" --models claude,codex
-```
+```text
 
 Get JSON output
 
 ```sh
 converge "prompt" --models claude,codex --output-format json
-```
+```text
 ````
 
 ## 5. Tables: only for parallel structure
@@ -263,7 +263,7 @@ To get started with development:
 git clone https://github.com/ORG/REPO.git
 cd REPO
 cargo test --workspace
-```
+```text
 ````
 
 Do not add extra prose, badges, or a code of conduct link. The simplicity is the

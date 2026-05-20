@@ -15,11 +15,29 @@ pub async fn run(
 ) -> (ClosingDecision, Option<ModelId>, u32) {
     let mean_scores = compute_mean_scores(evaluations);
 
-    // Determine current winner
-    let current_winner = mean_scores
+    // Determine current winner.
+    // When scores are tied, prefer the previous winner (preserves stability).
+    // Otherwise use lexicographic model ID order for determinism.
+    let best_score = mean_scores
+        .values()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let mut leaders: Vec<&ModelId> = mean_scores
         .iter()
-        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-        .map(|(id, _)| id.clone());
+        .filter(|(_, s)| (**s - best_score).abs() < f64::EPSILON)
+        .map(|(id, _)| id)
+        .collect();
+    leaders.sort_by_key(std::string::ToString::to_string);
+
+    let current_winner = if let Some(prev) = previous_winner {
+        if leaders.contains(&prev) {
+            Some(prev.clone())
+        } else {
+            leaders.first().map(|id| (*id).clone())
+        }
+    } else {
+        leaders.first().map(|id| (*id).clone())
+    };
 
     // Compute stability
     let stable_rounds = if let (Some(current), Some(previous)) = (&current_winner, previous_winner)
@@ -82,7 +100,7 @@ mod tests {
         let mut evals = HashMap::new();
         // model_b evaluates model_a: score 8
         evals.insert(
-            (ModelId::new("b"), ModelId::new("a")),
+            (ModelId::new("test/b"), ModelId::new("test/a")),
             Evaluation {
                 review: Review {
                     strengths: vec![],
@@ -96,7 +114,7 @@ mod tests {
         );
         // model_c evaluates model_a: score 6
         evals.insert(
-            (ModelId::new("c"), ModelId::new("a")),
+            (ModelId::new("test/c"), ModelId::new("test/a")),
             Evaluation {
                 review: Review {
                     strengths: vec![],
@@ -116,6 +134,6 @@ mod tests {
 
         let means = compute_mean_scores(&eval_set);
         // model_a: (8 + 6) / 2 = 7.0
-        assert!((means[&ModelId::new("a")] - 7.0).abs() < f64::EPSILON);
+        assert!((means[&ModelId::new("test/a")] - 7.0).abs() < f64::EPSILON);
     }
 }

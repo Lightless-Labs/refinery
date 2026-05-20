@@ -132,7 +132,7 @@ Multi-agent debate (MAD) is an active area of AI research. Key findings that inf
 
 A round-based consensus engine with four phases per round:
 
-```
+```text
 PROPOSE → EVALUATE (review+score merged) → REFINE → CLOSE CHECK
 ```
 `[REVIEW FIX]` Merged CROSS-REVIEW and VOTE into a single EVALUATE phase. Each model reviews and scores each other model's answer in one LLM call, producing both qualitative feedback (for REFINE) and a numeric score (for CLOSE CHECK). Rankings dropped from v0 (score-only convergence).
@@ -147,7 +147,7 @@ v0 uses CLI-based backends (shelling out to `claude`, `codex`, `gemini`) to avoi
 
 Three-crate workspace with flattened internal structure. The full hexagonal layering (domain/ports/driven/driving) from the infinidash sibling project is deferred until the project grows enough to warrant the ceremony — extracting flat modules into nested layers is a ~30-minute refactor.
 
-```
+```text
 converge-refinery/
 ├── Cargo.toml                      # Workspace root
 ├── MODULE.bazel                    # Bazel config (CLI build)
@@ -416,7 +416,7 @@ Based on LLM-as-judge literature (MT-Bench, DebateLLM, M-MAD) and AWS multi-agen
 
 #### Evaluate Schema (merged review+score) `[REVIEW FIX]`
 
-```
+```text
 You are evaluating another model's answer. Review it qualitatively AND score it on a 1-10 scale.
 Think step by step about the answer's quality before scoring.
 Respond with ONLY a JSON block.
@@ -430,7 +430,7 @@ Respond with ONLY a JSON block.
   "rationale": "Brief reasoning for the score, referencing specific strengths/weaknesses.",
   "score": 8
 }
-```
+```text
 ```
 
 Note: `rationale` comes BEFORE `score` to enforce chain-of-thought scoring (per prompt engineering best practices). Answer labels use randomized anonymous labels (A/B/C), not model IDs, per D10. Presentation order is shuffled per evaluator per round to mitigate position bias.
@@ -486,7 +486,7 @@ From the literature:
 
 ### Concurrency Architecture
 
-```
+```text
                   JoinSet<Result<PhaseOutcome, ProviderError>>
                   ╱    │    ╲     ...    ╲
                Task1  Task2  Task3  ...  TaskN(N-1)
@@ -609,7 +609,7 @@ impl Engine {
 
 Each model receives context about the run's state in every prompt:
 
-```
+```text
 <run_context>
 Round: 3 of 5
 Models: 3 participating (1 dropped in round 2)
@@ -1006,7 +1006,7 @@ gemini = []
 
 **CLI interface:**
 
-```
+```text
 converge [OPTIONS] <PROMPT>
 
 Arguments:

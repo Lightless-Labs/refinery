@@ -1,23 +1,20 @@
-# Rust
-/target/
-**/*.rs.bk
-
 
 # Bazel
-/bazel-*
-.bazelrc.user
-
 # Environment
-.env
+# IDE
+# Rust
+# macOS
+**/*.rs.bk
 *.key
 *.pem
-
-# IDE
+*.swo
+*.swp
+*~
+.DS_Store
+.bazelrc.user
+.env
 .idea/
 .vscode/
-*.swp
-*.swo
-*~
-
-# macOS
-.DS_Store
+/bazel-*
+/target/
+nohup.out

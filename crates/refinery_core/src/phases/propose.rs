@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
@@ -6,10 +7,27 @@ use tracing::{info, warn};
 
 use crate::ModelProvider;
 use crate::error::ProviderError;
+use crate::progress::{self, ProgressEvent, ProgressFn};
 use crate::prompts;
-use crate::types::{Message, ProposalSet};
+use crate::types::{Message, ModelId, ProposalSet, RoundHistory};
+
+/// Extract the answer string from a structured `{"answer": "..."}` response.
+///
+/// Falls back to `None` if the response isn't valid JSON with an `answer` field,
+/// allowing the caller to use the raw response as-is (for providers without schema support).
+fn extract_answer(response: &str) -> Option<String> {
+    let parsed: serde_json::Value = serde_json::from_str(response).ok()?;
+    parsed
+        .get("answer")
+        .and_then(|a| a.as_str())
+        .map(String::from)
+}
 
 /// Execute the PROPOSE phase: each model independently produces an answer.
+///
+/// In round N>1, if `model_histories` is provided, each model's prompt is
+/// enriched with its full trajectory (prior proposals + reviews per round).
+#[allow(clippy::too_many_arguments, clippy::implicit_hasher)]
 pub async fn run(
     providers: &[Arc<dyn ModelProvider>],
     prompt: &str,
@@ -18,6 +36,8 @@ pub async fn run(
     semaphore: &Arc<Semaphore>,
     timeout: std::time::Duration,
     additional_context: Option<&str>,
+    model_histories: Option<&HashMap<ModelId, RoundHistory>>,
+    progress: Option<ProgressFn>,
 ) -> ProposalSet {
     let mut proposals = std::collections::HashMap::new();
     let mut dropped = Vec::new();
@@ -27,7 +47,15 @@ pub async fn run(
     for provider in providers {
         let model_id = provider.model_id().clone();
         let sem = semaphore.clone();
-        let mut user_content = prompts::propose_prompt(prompt, round_ctx);
+        let mut user_content = if let Some(histories) = model_histories {
+            if let Some(history) = histories.get(&model_id) {
+                prompts::propose_with_history_prompt(prompt, round_ctx, history)
+            } else {
+                prompts::propose_prompt(prompt, round_ctx)
+            }
+        } else {
+            prompts::propose_prompt(prompt, round_ctx)
+        };
         if let Some(ctx) = additional_context {
             let _ = write!(user_content, "\n\nAdditional context: {ctx}");
         }
@@ -39,11 +67,16 @@ pub async fn run(
 
         handles.spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
-            let result = tokio::time::timeout(timeout, provider.send_message(&messages)).await;
+            let result = tokio::time::timeout(
+                timeout,
+                provider.send_message(&messages, Some(prompts::ANSWER_SCHEMA)),
+            )
+            .await;
             match result {
                 Ok(Ok(response)) => {
                     info!(model = %model_id, phase = "propose", "received response");
-                    Ok((model_id, response))
+                    let answer = extract_answer(&response).unwrap_or(response);
+                    Ok((model_id, answer))
                 }
                 Ok(Err(e)) => {
                     warn!(model = %model_id, phase = "propose", error = %e, "provider error");
@@ -66,9 +99,22 @@ pub async fn run(
     while let Some(result) = handles.join_next().await {
         match result {
             Ok(Ok((model_id, response))) => {
+                if let Some(ref cb) = progress {
+                    cb(ProgressEvent::ModelProposed {
+                        model: model_id.clone(),
+                        word_count: response.split_whitespace().count(),
+                        preview: progress::preview(&response, 60),
+                    });
+                }
                 proposals.insert(model_id, response);
             }
             Ok(Err((model_id, err))) => {
+                if let Some(ref cb) = progress {
+                    cb(ProgressEvent::ModelProposeFailed {
+                        model: model_id.clone(),
+                        error: err.to_string(),
+                    });
+                }
                 dropped.push((model_id, err));
             }
             Err(join_err) => {
