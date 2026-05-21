@@ -9,7 +9,7 @@ use tokio::sync::Semaphore;
 use crate::ModelProvider;
 use crate::prompts;
 use crate::scoring::{self, PanelCandidate};
-use crate::types::{Message, ModelId, ScoreHistory};
+use crate::types::{Message, ModelId, ScoreHistory, ScoreHistoryEntry};
 
 /// Configuration for a brainstorm run.
 pub struct BrainstormConfig {
@@ -66,6 +66,13 @@ pub async fn run(
     prompt: &str,
     config: &BrainstormConfig,
 ) -> Result<BrainstormResult, BrainstormError> {
+    if providers.is_empty() {
+        return Err(BrainstormError {
+            round: 0,
+            message: "At least one provider is required for brainstorm.".to_string(),
+        });
+    }
+
     let permits = if config.max_concurrent == 0 {
         providers.len().pow(2).max(1)
     } else {
@@ -260,7 +267,10 @@ pub async fn run(
             score_histories
                 .entry(model_id.clone())
                 .or_default()
-                .push((answer.clone(), mean));
+                .push(ScoreHistoryEntry {
+                    proposal: answer.clone(),
+                    mean_score: mean,
+                });
         }
 
         latest_answers = round_proposals
@@ -405,6 +415,17 @@ mod tests {
             timeout: Duration::from_secs(120),
             output_dir: None,
         }
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn empty_providers_returns_clear_error() {
+        let config = default_config(1, 1);
+        let result = run(&[], "test prompt", &config).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.round, 0);
+        assert!(err.message.contains("At least one provider"));
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
