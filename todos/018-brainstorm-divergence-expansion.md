@@ -4,6 +4,7 @@ priority: medium
 milestone: v0.4
 depends_on: 004-verb-brainstorm
 created: 2026-04-24
+updated: 2026-05-21
 ---
 
 # Brainstorm Divergence Expansion
@@ -11,6 +12,8 @@ created: 2026-04-24
 ## Goal
 
 Extend `refinery brainstorm` with optional upstream divergence mechanisms that generate a wider set of independent lineages before score-only iteration and controversial panel selection.
+
+Do not start implementation until the v0 brainstorm smoke-test field report exists (`todos/019-brainstorm-smoke-test-field-report.md`). The field report should establish whether v0 score-only controversial selection needs polish before adding more lineage volume.
 
 The v0 brainstorm loop already **preserves divergence** by preventing models from seeing peer answers or review rationale. This TODO is about **injecting divergence** before the loop starts.
 
