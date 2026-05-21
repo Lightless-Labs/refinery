@@ -4,6 +4,8 @@ priority: medium
 milestone: v0.3
 depends_on: 004-verb-brainstorm
 created: 2026-05-21
+status: completed
+completed: 2026-05-21
 ---
 
 # Surface Brainstorm Provider Failures and Degraded-Run Semantics
@@ -43,6 +45,8 @@ Design the exact policy, then implement it. Candidate requirements:
 
 ## Acceptance Criteria
 
+Completed in implementation commit for `docs/plans/2026-05-21-001-fix-brainstorm-provider-failure-observability-plan.md`.
+
 - A multi-model brainstorm where one provider succeeds and others fail does not look like a clean, fully evaluated brainstorm.
 - JSON output lets automation distinguish:
   - all requested providers participated,
@@ -50,6 +54,14 @@ Design the exact policy, then implement it. Candidate requirements:
   - evaluation was skipped because fewer than two providers produced proposals.
 - Text output includes actionable provider failure information without dumping raw secrets or excessive CLI logs.
 - Tests cover partial provider failure during proposal and evaluation phases.
+
+Verification completed:
+
+- `cargo test -p refinery_core brainstorm`
+- `cargo check -p refinery_cli`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`
+- Manual degraded JSON smoke with `claude-code,codex-cli` showing `status: "degraded"`, `evaluated: false`, null score fields, provider failure details, and `provider-failures.json` artifact.
 
 ## Origin
 

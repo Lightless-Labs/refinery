@@ -4,7 +4,9 @@ use std::time::Duration;
 use clap::Parser;
 use serde::Serialize;
 
-use refinery_core::brainstorm::{BrainstormConfig, BrainstormResult};
+use refinery_core::brainstorm::{
+    BrainstormConfig, BrainstormError, BrainstormProviderFailure, BrainstormResult,
+};
 use refinery_core::types::ModelId;
 
 use super::common::{
@@ -31,7 +33,10 @@ pub struct BrainstormArgs {
 #[derive(Serialize)]
 struct BrainstormJsonOutput {
     status: String,
+    degraded: bool,
+    evaluation_status: String,
     panel: Vec<PanelAnswerOutput>,
+    provider_failures: Vec<ProviderFailureOutput>,
     metadata: MetadataOutput,
 }
 
@@ -39,9 +44,10 @@ struct BrainstormJsonOutput {
 struct PanelAnswerOutput {
     model_id: String,
     answer: String,
-    mean_score: f64,
-    stddev: f64,
-    controversy_score: f64,
+    evaluated: bool,
+    mean_score: Option<f64>,
+    stddev: Option<f64>,
+    controversy_score: Option<f64>,
     per_evaluator_scores: Vec<EvaluatorScore>,
 }
 
@@ -49,6 +55,31 @@ struct PanelAnswerOutput {
 struct EvaluatorScore {
     evaluator: String,
     score: f64,
+}
+
+#[derive(Serialize)]
+struct ProviderFailureOutput {
+    round: u32,
+    phase: String,
+    model_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_model_id: Option<String>,
+    message: String,
+}
+
+#[derive(Serialize)]
+struct BrainstormErrorJsonOutput {
+    status: String,
+    error: super::common::ErrorDetail,
+    provider_failures: Vec<ProviderFailureOutput>,
+    metadata: BrainstormErrorMetadata,
+}
+
+#[derive(Serialize)]
+struct BrainstormErrorMetadata {
+    total_rounds: u32,
+    total_calls: u32,
+    models_dropped: Vec<String>,
 }
 
 // ── Main entry point ────────────────────────────────────────────────────
@@ -123,10 +154,7 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
 
     match result {
         Ok(br) => emit_success(shared, &br, start_time.elapsed()),
-        Err(e) => {
-            emit_error(shared, "brainstorm_failed", &e.to_string(), "brainstorm");
-            ExitCode::from(1)
-        }
+        Err(e) => emit_brainstorm_error(shared, &e),
     }
 }
 
@@ -146,64 +174,176 @@ fn emit_success(
     }
 
     match shared.output_format {
+        OutputFormat::Json => emit_json_success(result, elapsed),
+        OutputFormat::Text => {
+            emit_text_success(result, elapsed);
+            ExitCode::SUCCESS
+        }
+    }
+}
+
+fn emit_json_success(result: &BrainstormResult, elapsed: std::time::Duration) -> ExitCode {
+    let json_output = BrainstormJsonOutput {
+        status: if result.degraded {
+            "degraded".to_string()
+        } else {
+            "brainstormed".to_string()
+        },
+        degraded: result.degraded,
+        evaluation_status: result.evaluation_status.as_str().to_string(),
+        panel: result
+            .panel
+            .iter()
+            .map(|c| {
+                let evaluated = !c.per_evaluator_scores.is_empty();
+                PanelAnswerOutput {
+                    model_id: c.model_id.to_string(),
+                    answer: c.answer.clone(),
+                    evaluated,
+                    mean_score: evaluated.then_some(c.mean_score),
+                    stddev: evaluated.then_some(c.stddev),
+                    controversy_score: evaluated.then_some(c.controversy_score),
+                    per_evaluator_scores: c
+                        .per_evaluator_scores
+                        .iter()
+                        .map(|(id, s)| EvaluatorScore {
+                            evaluator: id.to_string(),
+                            score: *s,
+                        })
+                        .collect(),
+                }
+            })
+            .collect(),
+        provider_failures: result
+            .provider_failures
+            .iter()
+            .map(provider_failure_output)
+            .collect(),
+        metadata: MetadataOutput {
+            total_rounds: result.rounds_completed,
+            total_calls: result.total_calls,
+            elapsed_ms: elapsed.as_millis(),
+            models_dropped: result
+                .failed_model_ids()
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
+        },
+    };
+    match serde_json::to_string_pretty(&json_output) {
+        Ok(json) => println!("{json}"),
+        Err(e) => {
+            eprintln!("Failed to serialize brainstorm output: {e}");
+            return ExitCode::from(1);
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+fn emit_text_success(result: &BrainstormResult, elapsed: std::time::Duration) {
+    if result.degraded {
+        println!("Status: Degraded brainstorm");
+    } else {
+        println!("Status: Brainstormed");
+    }
+    println!("Rounds: {}", result.rounds_completed);
+    println!("Total calls: {}", result.total_calls);
+    println!("Evaluation status: {}", result.evaluation_status.as_str());
+    println!("Elapsed: {elapsed:?}");
+    if !result.provider_failures.is_empty() {
+        println!("\n── Provider failures ──");
+        for failure in &result.provider_failures {
+            println!("{}", format_provider_failure(failure));
+        }
+    }
+    println!("\n── Panel ({} answers) ──\n", result.panel.len());
+    for (i, candidate) in result.panel.iter().enumerate() {
+        if candidate.per_evaluator_scores.is_empty() {
+            println!("#{} — {} (not evaluated)", i + 1, candidate.model_id,);
+        } else {
+            println!(
+                "#{} — {} (mean: {:.1}, stddev: {:.2}, controversy: {:.2})",
+                i + 1,
+                candidate.model_id,
+                candidate.mean_score,
+                candidate.stddev,
+                candidate.controversy_score,
+            );
+        }
+        println!("{}\n", candidate.answer);
+    }
+}
+
+fn provider_failure_output(failure: &BrainstormProviderFailure) -> ProviderFailureOutput {
+    ProviderFailureOutput {
+        round: failure.round,
+        phase: failure.phase.to_string(),
+        model_id: failure.model_id.to_string(),
+        target_model_id: failure.target_model_id.as_ref().map(ToString::to_string),
+        message: failure.message.clone(),
+    }
+}
+
+fn format_provider_failure(failure: &BrainstormProviderFailure) -> String {
+    let target = failure
+        .target_model_id
+        .as_ref()
+        .map(|target| format!(" -> {target}"))
+        .unwrap_or_default();
+    format!(
+        "round {} {}: {}{}: {}",
+        failure.round, failure.phase, failure.model_id, target, failure.message
+    )
+}
+
+fn failed_model_ids_from_failures(failures: &[BrainstormProviderFailure]) -> Vec<String> {
+    let mut ids: Vec<String> = failures
+        .iter()
+        .map(|failure| failure.model_id.to_string())
+        .collect();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+fn emit_brainstorm_error(shared: &SharedArgs, error: &BrainstormError) -> ExitCode {
+    match shared.output_format {
         OutputFormat::Json => {
-            let json_output = BrainstormJsonOutput {
-                status: "brainstormed".to_string(),
-                panel: result
-                    .panel
+            let err = BrainstormErrorJsonOutput {
+                status: "error".to_string(),
+                error: super::common::ErrorDetail {
+                    code: "brainstorm_failed".to_string(),
+                    message: error.to_string(),
+                    provider: None,
+                    round: Some(error.round),
+                    phase: Some("brainstorm".to_string()),
+                    retryable: true,
+                },
+                provider_failures: error
+                    .provider_failures
                     .iter()
-                    .map(|c| PanelAnswerOutput {
-                        model_id: c.model_id.to_string(),
-                        answer: c.answer.clone(),
-                        mean_score: c.mean_score,
-                        stddev: c.stddev,
-                        controversy_score: c.controversy_score,
-                        per_evaluator_scores: c
-                            .per_evaluator_scores
-                            .iter()
-                            .map(|(id, s)| EvaluatorScore {
-                                evaluator: id.to_string(),
-                                score: *s,
-                            })
-                            .collect(),
-                    })
+                    .map(provider_failure_output)
                     .collect(),
-                metadata: MetadataOutput {
-                    total_rounds: result.rounds_completed,
-                    total_calls: result.total_calls,
-                    elapsed_ms: elapsed.as_millis(),
-                    models_dropped: vec![],
+                metadata: BrainstormErrorMetadata {
+                    total_rounds: error.rounds_completed,
+                    total_calls: error.total_calls,
+                    models_dropped: failed_model_ids_from_failures(&error.provider_failures),
                 },
             };
-            match serde_json::to_string_pretty(&json_output) {
-                Ok(json) => println!("{json}"),
-                Err(e) => {
-                    eprintln!("Failed to serialize brainstorm output: {e}");
-                    return ExitCode::from(1);
-                }
+            match serde_json::to_string_pretty(&err) {
+                Ok(json) => eprintln!("{json}"),
+                Err(e) => eprintln!("{error} (also failed to serialize JSON error: {e})"),
             }
         }
         OutputFormat::Text => {
-            println!("Status: Brainstormed");
-            println!("Rounds: {}", result.rounds_completed);
-            println!("Total calls: {}", result.total_calls);
-            println!("Elapsed: {elapsed:?}");
-            println!("\n── Panel ({} answers) ──\n", result.panel.len());
-            for (i, candidate) in result.panel.iter().enumerate() {
-                println!(
-                    "#{} — {} (mean: {:.1}, stddev: {:.2}, controversy: {:.2})",
-                    i + 1,
-                    candidate.model_id,
-                    candidate.mean_score,
-                    candidate.stddev,
-                    candidate.controversy_score,
-                );
-                println!("{}\n", candidate.answer);
+            eprintln!("{error}");
+            for failure in &error.provider_failures {
+                eprintln!("{}", format_provider_failure(failure));
             }
         }
     }
 
-    ExitCode::SUCCESS
+    ExitCode::from(1)
 }
 
 fn emit_error(shared: &SharedArgs, code: &str, message: &str, phase: &str) {

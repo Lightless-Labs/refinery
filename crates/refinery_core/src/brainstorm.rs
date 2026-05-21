@@ -7,9 +7,10 @@ use std::time::Duration;
 use tokio::sync::Semaphore;
 
 use crate::ModelProvider;
+use crate::error::ProviderError;
 use crate::prompts;
 use crate::scoring::{self, PanelCandidate};
-use crate::types::{Message, ModelId, ScoreHistory};
+use crate::types::{Message, ModelId, Phase, ScoreHistory};
 
 /// Configuration for a brainstorm run.
 pub struct BrainstormConfig {
@@ -31,6 +32,37 @@ pub struct BrainstormRound {
     pub eval_scores: HashMap<ModelId, Vec<(ModelId, f64)>>,
 }
 
+/// Provider failure captured during a brainstorm run.
+#[derive(Debug, Clone)]
+pub struct BrainstormProviderFailure {
+    pub round: u32,
+    pub phase: Phase,
+    pub model_id: ModelId,
+    pub target_model_id: Option<ModelId>,
+    pub message: String,
+}
+
+/// Whether peer evaluation produced usable scores for the brainstorm panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrainstormEvaluationStatus {
+    PeerEvaluated,
+    Partial,
+    SkippedSingleModel,
+    SkippedInsufficientModels,
+}
+
+impl BrainstormEvaluationStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::PeerEvaluated => "peer_evaluated",
+            Self::Partial => "partial",
+            Self::SkippedSingleModel => "skipped_single_model",
+            Self::SkippedInsufficientModels => "skipped_insufficient_models",
+        }
+    }
+}
+
 /// Result of a brainstorm run.
 #[derive(Debug)]
 pub struct BrainstormResult {
@@ -38,6 +70,23 @@ pub struct BrainstormResult {
     pub total_calls: u32,
     pub rounds_completed: u32,
     pub rounds: Vec<BrainstormRound>,
+    pub provider_failures: Vec<BrainstormProviderFailure>,
+    pub evaluation_status: BrainstormEvaluationStatus,
+    pub degraded: bool,
+}
+
+impl BrainstormResult {
+    #[must_use]
+    pub fn failed_model_ids(&self) -> Vec<ModelId> {
+        let mut ids: Vec<ModelId> = self
+            .provider_failures
+            .iter()
+            .map(|failure| failure.model_id.clone())
+            .collect();
+        ids.sort_by_key(ToString::to_string);
+        ids.dedup();
+        ids
+    }
 }
 
 /// Error from the brainstorm loop.
@@ -45,6 +94,9 @@ pub struct BrainstormResult {
 pub struct BrainstormError {
     pub round: u32,
     pub message: String,
+    pub provider_failures: Vec<BrainstormProviderFailure>,
+    pub total_calls: u32,
+    pub rounds_completed: u32,
 }
 
 impl std::fmt::Display for BrainstormError {
@@ -80,6 +132,8 @@ pub async fn run(
     let mut last_round_eval_scores: HashMap<ModelId, Vec<(ModelId, f64)>> = HashMap::new();
     let mut total_calls: u32 = 0;
     let mut round_data: Vec<BrainstormRound> = Vec::new();
+    let mut provider_failures: Vec<BrainstormProviderFailure> = Vec::new();
+    let mut had_eval_failure = false;
 
     for round in 1..=config.max_rounds {
         // ── Propose ─────────────────────────────────────────────────────
@@ -124,12 +178,51 @@ pub async fn run(
                         .or_else(|| serde_json::from_str::<serde_json::Value>(&response).ok())
                         .and_then(|v| v.get("answer").and_then(|a| a.as_str()).map(String::from))
                         .unwrap_or(response);
-                    if !answer.trim().is_empty() {
+                    if answer.trim().is_empty() {
+                        provider_failures.push(BrainstormProviderFailure {
+                            round,
+                            phase: Phase::Propose,
+                            model_id,
+                            target_model_id: None,
+                            message: "provider returned an empty proposal".to_string(),
+                        });
+                    } else {
                         round_proposals.insert(model_id, answer);
                     }
                 }
-                Ok((_, Ok(Err(_)) | Err(_))) | Err(_) => {
+                Ok((model_id, Ok(Err(err)))) => {
                     propose_count += 1;
+                    provider_failures.push(BrainstormProviderFailure {
+                        round,
+                        phase: Phase::Propose,
+                        model_id,
+                        target_model_id: None,
+                        message: err.to_string(),
+                    });
+                }
+                Ok((model_id, Err(_))) => {
+                    propose_count += 1;
+                    let err = ProviderError::Timeout {
+                        model: model_id.clone(),
+                        elapsed: timeout,
+                    };
+                    provider_failures.push(BrainstormProviderFailure {
+                        round,
+                        phase: Phase::Propose,
+                        model_id,
+                        target_model_id: None,
+                        message: err.to_string(),
+                    });
+                }
+                Err(err) => {
+                    propose_count += 1;
+                    provider_failures.push(BrainstormProviderFailure {
+                        round,
+                        phase: Phase::Propose,
+                        model_id: ModelId::new("unknown/join-error"),
+                        target_model_id: None,
+                        message: err.to_string(),
+                    });
                 }
             }
         }
@@ -140,6 +233,9 @@ pub async fn run(
             return Err(BrainstormError {
                 round,
                 message: "All models failed to propose.".to_string(),
+                provider_failures,
+                total_calls,
+                rounds_completed: round.saturating_sub(1),
             });
         }
 
@@ -239,10 +335,54 @@ pub async fn run(
                         .filter(|s| (1.0..=10.0).contains(s));
                     if let Some(score) = score_val {
                         round_scores.entry(to).or_default().push((from, score));
+                    } else {
+                        had_eval_failure = true;
+                        provider_failures.push(BrainstormProviderFailure {
+                            round,
+                            phase: Phase::Evaluate,
+                            model_id: from,
+                            target_model_id: Some(to),
+                            message: "provider returned an invalid brainstorm evaluation score"
+                                .to_string(),
+                        });
                     }
                 }
-                Ok((_, _, Ok(Err(_)) | Err(_))) | Err(_) => {
+                Ok((from, to, Ok(Err(err)))) => {
                     eval_count += 1;
+                    had_eval_failure = true;
+                    provider_failures.push(BrainstormProviderFailure {
+                        round,
+                        phase: Phase::Evaluate,
+                        model_id: from,
+                        target_model_id: Some(to),
+                        message: err.to_string(),
+                    });
+                }
+                Ok((from, to, Err(_))) => {
+                    eval_count += 1;
+                    had_eval_failure = true;
+                    let err = ProviderError::Timeout {
+                        model: from.clone(),
+                        elapsed: timeout,
+                    };
+                    provider_failures.push(BrainstormProviderFailure {
+                        round,
+                        phase: Phase::Evaluate,
+                        model_id: from,
+                        target_model_id: Some(to),
+                        message: err.to_string(),
+                    });
+                }
+                Err(err) => {
+                    eval_count += 1;
+                    had_eval_failure = true;
+                    provider_failures.push(BrainstormProviderFailure {
+                        round,
+                        phase: Phase::Evaluate,
+                        model_id: ModelId::new("unknown/join-error"),
+                        target_model_id: None,
+                        message: err.to_string(),
+                    });
                 }
             }
         }
@@ -315,10 +455,38 @@ pub async fn run(
 
     let panel = scoring::select_panel(&mut candidates, config.panel_size);
 
+    let evaluation_status = if latest_answers.len() < 2 {
+        if providers.len() == 1 && provider_failures.is_empty() {
+            BrainstormEvaluationStatus::SkippedSingleModel
+        } else {
+            BrainstormEvaluationStatus::SkippedInsufficientModels
+        }
+    } else if had_eval_failure
+        || panel
+            .iter()
+            .any(|candidate| candidate.per_evaluator_scores.is_empty())
+    {
+        BrainstormEvaluationStatus::Partial
+    } else {
+        BrainstormEvaluationStatus::PeerEvaluated
+    };
+    let degraded = !provider_failures.is_empty()
+        || (providers.len() > 1 && latest_answers.len() < providers.len())
+        || matches!(
+            evaluation_status,
+            BrainstormEvaluationStatus::Partial
+                | BrainstormEvaluationStatus::SkippedInsufficientModels
+        );
+
     // Save panel summary
     if let Some(ref dir) = config.output_dir {
         if let Err(e) = save_panel_summary(dir, &panel) {
             eprintln!("Warning: failed to save panel summary: {e}");
+        }
+        if !provider_failures.is_empty() {
+            if let Err(e) = save_provider_failures(dir, &provider_failures) {
+                eprintln!("Warning: failed to save provider failures: {e}");
+            }
         }
     }
 
@@ -327,6 +495,9 @@ pub async fn run(
         total_calls,
         rounds_completed: config.max_rounds,
         rounds: round_data,
+        provider_failures,
+        evaluation_status,
+        degraded,
     })
 }
 
@@ -361,6 +532,29 @@ fn save_round_artifacts(
     Ok(())
 }
 
+fn save_provider_failures(
+    base_dir: &std::path::Path,
+    failures: &[BrainstormProviderFailure],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let failures_json: Vec<serde_json::Value> = failures
+        .iter()
+        .map(|failure| {
+            serde_json::json!({
+                "round": failure.round,
+                "phase": failure.phase.to_string(),
+                "model_id": failure.model_id.to_string(),
+                "target_model_id": failure.target_model_id.as_ref().map(ToString::to_string),
+                "message": failure.message,
+            })
+        })
+        .collect();
+    std::fs::write(
+        base_dir.join("provider-failures.json"),
+        serde_json::to_string_pretty(&failures_json)?,
+    )?;
+    Ok(())
+}
+
 fn save_panel_summary(
     base_dir: &std::path::Path,
     panel: &[scoring::PanelCandidate],
@@ -368,11 +562,13 @@ fn save_panel_summary(
     let panel_json: Vec<serde_json::Value> = panel
         .iter()
         .map(|c| {
+            let evaluated = !c.per_evaluator_scores.is_empty();
             serde_json::json!({
                 "model_id": c.model_id.to_string(),
-                "mean_score": c.mean_score,
-                "stddev": c.stddev,
-                "controversy_score": c.controversy_score,
+                "evaluated": evaluated,
+                "mean_score": evaluated.then_some(c.mean_score),
+                "stddev": evaluated.then_some(c.stddev),
+                "controversy_score": evaluated.then_some(c.controversy_score),
                 "per_evaluator_scores": c.per_evaluator_scores.iter()
                     .map(|(id, s)| serde_json::json!({"evaluator": id.to_string(), "score": s}))
                     .collect::<Vec<_>>(),
@@ -389,7 +585,7 @@ fn save_panel_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{EchoProvider, FailingProvider};
+    use crate::testing::{EchoProvider, FailAfterNProvider, FailingProvider};
 
     fn eval_json(score: u8) -> String {
         format!(
@@ -426,6 +622,11 @@ mod tests {
         assert_eq!(result.panel[0].model_id, ModelId::new("test/solo"));
         // 3 rounds * 1 propose = 3 calls (no evals for single model)
         assert_eq!(result.total_calls, 3);
+        assert!(!result.degraded);
+        assert_eq!(
+            result.evaluation_status,
+            BrainstormEvaluationStatus::SkippedSingleModel
+        );
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -456,6 +657,65 @@ mod tests {
         let answers: Vec<&str> = result.panel.iter().map(|c| c.answer.as_str()).collect();
         assert!(answers.contains(&"a round 2"));
         assert!(answers.contains(&"b round 2"));
+        assert!(!result.degraded);
+        assert_eq!(
+            result.evaluation_status,
+            BrainstormEvaluationStatus::PeerEvaluated
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn partial_proposal_failure_is_reported_as_degraded() {
+        let ok = EchoProvider::new("test/ok");
+        ok.queue_response(r#"{"answer": "surviving answer"}"#.to_string());
+
+        let providers: Vec<Arc<dyn ModelProvider>> =
+            vec![Arc::new(ok), Arc::new(FailingProvider::new("test/fail"))];
+        let config = default_config(1, 2);
+        let result = run(&providers, "test prompt", &config).await.unwrap();
+
+        assert!(result.degraded);
+        assert_eq!(
+            result.evaluation_status,
+            BrainstormEvaluationStatus::SkippedInsufficientModels
+        );
+        assert_eq!(result.provider_failures.len(), 1);
+        assert_eq!(result.provider_failures[0].round, 1);
+        assert_eq!(result.provider_failures[0].phase, Phase::Propose);
+        assert_eq!(
+            result.provider_failures[0].model_id,
+            ModelId::new("test/fail")
+        );
+        assert_eq!(result.failed_model_ids(), vec![ModelId::new("test/fail")]);
+        assert_eq!(result.panel.len(), 1);
+        assert!(result.panel[0].per_evaluator_scores.is_empty());
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn evaluation_failure_is_reported_as_degraded() {
+        let ok = EchoProvider::new("test/ok");
+        ok.queue_response(r#"{"answer": "ok answer"}"#.to_string());
+        ok.queue_response(eval_json(8));
+
+        let fails_on_eval = FailAfterNProvider::new("test/fails_on_eval", 1);
+
+        let providers: Vec<Arc<dyn ModelProvider>> = vec![Arc::new(ok), Arc::new(fails_on_eval)];
+        let config = default_config(1, 2);
+        let result = run(&providers, "test prompt", &config).await.unwrap();
+
+        assert!(result.degraded);
+        assert_eq!(
+            result.evaluation_status,
+            BrainstormEvaluationStatus::Partial
+        );
+        assert!(
+            result
+                .provider_failures
+                .iter()
+                .any(|failure| failure.phase == Phase::Evaluate
+                    && failure.model_id == ModelId::new("test/fails_on_eval")
+                    && failure.target_model_id == Some(ModelId::new("test/ok")))
+        );
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -521,5 +781,7 @@ mod tests {
         let err = result.unwrap_err();
         assert_eq!(err.round, 1);
         assert!(err.message.contains("All models failed"));
+        assert_eq!(err.provider_failures.len(), 2);
+        assert_eq!(err.rounds_completed, 0);
     }
 }
