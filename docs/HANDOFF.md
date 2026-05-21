@@ -2,7 +2,7 @@
 
 Current state of the project and active work. Read this at session start. Update before compaction or at natural breakpoints.
 
-**Last updated:** 2026-05-20
+**Last updated:** 2026-05-21
 
 ## Project State
 
@@ -44,12 +44,13 @@ See `memory/verb_architecture.md` for full taxonomy with consistent terminology.
 
 Check `todos/` for the full list. Key ones:
 
-- **004** — brainstorm verb (merged in PR #28; TODO retained as shipped design/reference)
-- **011** — evolve verb (designed, not started)
+- **019** — brainstorm smoke tests and field report (recommended next clean-session entrypoint)
+- **017** — remaining brainstorm P3 nitpicks: JSON dry-run output, empty-provider validation, `ScoreHistory` named struct
 - **013** — brainstorm strategy benchmarks (post-v0), now including prompt-reframing and Open Collider-style domain-collision baselines
 - **018** — brainstorm divergence expansion: each model reframes the initial prompt, all models work all prompt variants; optional future domain collisions
-- **016-017** — remaining P2/P3 follow-ups from brainstorm reviews (JSON serialization consistency, dry-run JSON/typing nits)
+- **011** — evolve verb (designed, not started)
 - **010** — TTY-gate ANSI escape codes (affects all verbs)
+- **016** — JSON serialization consistency follow-up; partially addressed in PR #28, verify remaining synthesize paths before closing
 
 ## CodeRabbit Review Process
 
@@ -59,8 +60,18 @@ Triage pattern: fix P1/P2 with code, create TODOs for P3/nitpicks, reply to ever
 
 ## Recent Context
 
-- PR #28 / `feat/brainstorm-verb` includes: core loop in `refinery_core::brainstorm::run()`, scoring in `refinery_core::scoring`, prompts in `prompts/brainstorm.rs`, CLI in `commands/brainstorm.rs`
-- 2026-04-24: PR #28 was squashed/rebased onto `main` and merged after passing GitHub's mergeability checks.
-- 2026-04-24 verification before merge: `cargo fmt --all -- --check`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings` passed after CodeRabbit follow-up fixes.
+- PR #28 / `feat/brainstorm-verb` merged the brainstorm verb: core loop in `refinery_core::brainstorm::run()`, scoring in `refinery_core::scoring`, prompts in `prompts/brainstorm.rs`, CLI in `commands/brainstorm.rs`.
+- PR #29 merged post-merge documentation cleanup: brainstorm TODO 004 completed, wording TODOs 014/015 completed, handoff updated.
+- 2026-05-21 local repo sync/cleanup completed: local `main` fast-forwarded to `origin/main` (`de1f051`), obsolete local brainstorm branches deleted, working tree clean before this handoff update branch.
+- PR #28 verification before merge: `cargo fmt --all -- --check`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings` passed after CodeRabbit follow-up fixes.
 - Brainstorm divergence discussion captured in `docs/plans/2026-03-31-001-feat-brainstorm-verb-plan.md` addendum and `todos/018-brainstorm-divergence-expansion.md`: v0 preserves divergence through score-only controversial selection; future work should inject divergence via prompt reframing (`n(n+1)` lineages) and optional Open Collider-style domain collisions (`n(1+p)d` lineages).
 - `docs/solutions/` has solution docs covering Ctrl+C/SIGINT, provider quirks, prompt injection, tiebreaking, etc.
+
+## Next Clean Session
+
+Recommended order:
+
+1. Start from clean `main` and read this handoff plus `todos/019-brainstorm-smoke-test-field-report.md`.
+2. Run real `refinery brainstorm` smoke tests and capture a short field report before adding new strategies.
+3. Use the field report to decide whether to do small polish first (`todos/017`) or create a dedicated implementation plan for prompt reframing (`todos/018`).
+4. Do not implement Open Collider-style domain collisions before establishing the v0 brainstorm baseline and budget constraints.
