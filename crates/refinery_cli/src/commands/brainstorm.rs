@@ -10,8 +10,8 @@ use refinery_core::brainstorm::{
 use refinery_core::types::ModelId;
 
 use super::common::{
-    MetadataOutput, OutputFormat, SharedArgs, build_providers, init_tracing, make_run_dir,
-    resolve_prompt,
+    DryRunOutput, MetadataOutput, OutputFormat, SharedArgs, build_providers, emit_dry_run_json,
+    init_tracing, make_run_dir, resolve_prompt,
 };
 
 #[derive(Parser, Debug)]
@@ -110,6 +110,21 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
         #[allow(clippy::cast_possible_truncation)]
         let calls_per_round = (n + n * (n - 1)) as u32;
         let total = calls_per_round * args.max_rounds;
+        if matches!(shared.output_format, OutputFormat::Json) {
+            return emit_dry_run_json(&DryRunOutput {
+                status: "dry_run".to_string(),
+                verb: "brainstorm".to_string(),
+                models: n,
+                max_rounds: Some(args.max_rounds),
+                converge_rounds: None,
+                calls_per_round: Some(calls_per_round),
+                converge_calls: None,
+                synthesis_calls: None,
+                total_calls: total,
+                panel_size: Some(args.panel_size),
+                warning: None,
+            });
+        }
         println!("Dry run estimate:");
         println!("  Models: {n}");
         println!("  Max rounds: {}", args.max_rounds);

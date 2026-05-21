@@ -112,6 +112,28 @@ pub struct ErrorResponse {
 }
 
 #[derive(Serialize)]
+pub struct DryRunOutput {
+    pub status: String,
+    pub verb: String,
+    pub models: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_rounds: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub converge_rounds: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calls_per_round: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub converge_calls: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub synthesis_calls: Option<u32>,
+    pub total_calls: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub panel_size: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+}
+
+#[derive(Serialize)]
 pub struct ErrorDetail {
     pub code: String,
     pub message: String,
@@ -122,6 +144,19 @@ pub struct ErrorDetail {
 }
 
 // ── Shared functions ────────────────────────────────────────────────────
+
+pub fn emit_dry_run_json(output: &DryRunOutput) -> ExitCode {
+    match serde_json::to_string_pretty(output) {
+        Ok(json) => {
+            println!("{json}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Failed to serialize dry-run output: {e}");
+            ExitCode::from(1)
+        }
+    }
+}
 
 /// Set up tracing based on verbose/debug flags.
 pub fn init_tracing(shared: &SharedArgs) {
