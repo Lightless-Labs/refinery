@@ -1,8 +1,9 @@
 ---
 title: "fix: brainstorm provider failure observability"
 type: fix
-status: active
+status: completed
 date: 2026-05-21
+completed: 2026-05-21
 todo: 020-brainstorm-provider-failure-observability
 ---
 
@@ -53,7 +54,12 @@ todo: 020-brainstorm-provider-failure-observability
 
 ## Verification
 
-- Add focused core tests for partial proposal failure and evaluation failure reporting.
-- Run `cargo fmt --all -- --check`.
-- Run `cargo test -p refinery_core brainstorm`.
-- Run `cargo test --workspace` if the focused tests pass.
+Completed:
+
+- Added focused core tests for partial proposal failure and evaluation failure reporting.
+- Ran `cargo fmt --all`.
+- Ran `cargo test -p refinery_core brainstorm`.
+- Ran `cargo check -p refinery_cli`.
+- Ran `cargo clippy --workspace --all-targets -- -D warnings`.
+- Ran `cargo test --workspace`.
+- Ran a manual degraded JSON smoke with `claude-code,codex-cli`; output now reports `status: "degraded"`, `evaluation_status: "skipped_insufficient_models"`, null score fields for unevaluated panel entries, provider failure details, and `provider-failures.json` artifact output.
