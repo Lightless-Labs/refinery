@@ -12,11 +12,18 @@ pub use tundish_core::{Message, ModelId, Role};
 /// Per-round trajectory entry: the model's own proposal and reviews received as `(label, text)`.
 pub type RoundHistory = Vec<(String, Vec<(String, String)>)>;
 
-/// Score-only trajectory: list of `(proposal_text, mean_score)` per round.
+/// One score-only trajectory entry for the brainstorm verb.
 ///
-/// Used by the brainstorm verb where models see only their own prior answers
-/// and aggregate scores — no reviews, no other models' content.
-pub type ScoreHistory = Vec<(String, f64)>;
+/// Models see only their own prior proposal and aggregate score — no reviews,
+/// no other models' content.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScoreHistoryEntry {
+    pub proposal: String,
+    pub mean_score: f64,
+}
+
+/// Score-only trajectory for the brainstorm verb.
+pub type ScoreHistory = Vec<ScoreHistoryEntry>;
 
 /// A score in the range 1-10 (inclusive).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

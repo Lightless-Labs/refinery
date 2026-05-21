@@ -9,9 +9,9 @@ use refinery_core::EngineConfig;
 use refinery_core::types::ConvergenceStatus;
 
 use super::common::{
-    AnswerOutput, ErrorResponse, JsonOutput, MetadataOutput, OutputFormat, SharedArgs,
-    WinnerOutput, build_providers, converge_error_to_detail, init_tracing, make_run_dir,
-    resolve_prompt, save_round_artifacts,
+    AnswerOutput, DryRunOutput, ErrorResponse, JsonOutput, MetadataOutput, OutputFormat,
+    SharedArgs, WinnerOutput, build_providers, converge_error_to_detail, emit_dry_run_json,
+    init_tracing, make_run_dir, resolve_prompt, save_round_artifacts,
 };
 
 #[derive(Parser, Debug)]
@@ -78,16 +78,34 @@ pub async fn run(args: ConvergeArgs) -> ExitCode {
             }
         };
         let estimate = refinery_core::Engine::estimate(&config);
+        let warning = (estimate.model_count > 5).then(|| {
+            format!(
+                "N={} has quadratic cost scaling ({} calls/round)",
+                estimate.model_count, estimate.calls_per_round
+            )
+        });
+        if matches!(shared.output_format, OutputFormat::Json) {
+            return emit_dry_run_json(&DryRunOutput {
+                status: "dry_run".to_string(),
+                verb: "converge".to_string(),
+                models: estimate.model_count,
+                max_rounds: Some(estimate.max_rounds),
+                converge_rounds: None,
+                calls_per_round: Some(estimate.calls_per_round),
+                converge_calls: None,
+                synthesis_calls: None,
+                total_calls: estimate.total_calls,
+                panel_size: None,
+                warning,
+            });
+        }
         println!("Dry run estimate:");
         println!("  Models: {}", estimate.model_count);
         println!("  Calls per round: {}", estimate.calls_per_round);
         println!("  Max rounds: {}", estimate.max_rounds);
         println!("  Total calls (max): {}", estimate.total_calls);
-        if estimate.model_count > 5 {
-            eprintln!(
-                "Warning: N={} has quadratic cost scaling ({} calls/round)",
-                estimate.model_count, estimate.calls_per_round
-            );
+        if let Some(warning) = warning {
+            eprintln!("Warning: {warning}");
         }
         return ExitCode::SUCCESS;
     }

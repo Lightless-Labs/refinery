@@ -13,9 +13,9 @@ use refinery_core::prompts;
 use refinery_core::types::{Message, ModelId, RoundOutcome};
 
 use super::common::{
-    AnswerOutput, ErrorResponse, JsonOutput, MetadataOutput, OutputFormat, SharedArgs,
-    WinnerOutput, build_providers, converge_error_to_detail, init_tracing, make_run_dir,
-    resolve_prompt, save_round_artifacts,
+    AnswerOutput, DryRunOutput, ErrorResponse, JsonOutput, MetadataOutput, OutputFormat,
+    SharedArgs, WinnerOutput, build_providers, converge_error_to_detail, emit_dry_run_json,
+    init_tracing, make_run_dir, resolve_prompt, save_round_artifacts,
 };
 
 #[derive(Parser, Debug)]
@@ -95,15 +95,28 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
         let estimate = refinery_core::Engine::estimate(&config);
         #[allow(clippy::cast_possible_truncation)]
         let synthesis_calls = if n > 1 { (n + n * (n - 1)) as u32 } else { 1 };
+        let total_calls = estimate.total_calls + synthesis_calls;
+        if matches!(shared.output_format, OutputFormat::Json) {
+            return emit_dry_run_json(&DryRunOutput {
+                status: "dry_run".to_string(),
+                verb: "synthesize".to_string(),
+                models: estimate.model_count,
+                max_rounds: None,
+                converge_rounds: Some(args.converge_rounds),
+                calls_per_round: None,
+                converge_calls: Some(estimate.total_calls),
+                synthesis_calls: Some(synthesis_calls),
+                total_calls,
+                panel_size: None,
+                warning: None,
+            });
+        }
         println!("Dry run estimate:");
         println!("  Models: {}", estimate.model_count);
         println!("  Converge rounds: {}", args.converge_rounds);
         println!("  Converge calls: {}", estimate.total_calls);
         println!("  Synthesis calls: {synthesis_calls}");
-        println!(
-            "  Total calls (max): {}",
-            estimate.total_calls + synthesis_calls
-        );
+        println!("  Total calls (max): {total_calls}");
         return ExitCode::SUCCESS;
     }
 
