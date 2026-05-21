@@ -44,7 +44,7 @@ See `memory/verb_architecture.md` for full taxonomy with consistent terminology.
 
 Check `todos/` for the full list. Key ones:
 
-- **019** — brainstorm smoke tests and field report (recommended next clean-session entrypoint)
+- **020** — brainstorm provider failure observability/degraded-run semantics (recommended next clean-session entrypoint)
 - **017** — remaining brainstorm P3 nitpicks: JSON dry-run output, empty-provider validation, `ScoreHistory` named struct
 - **013** — brainstorm strategy benchmarks (post-v0), now including prompt-reframing and Open Collider-style domain-collision baselines
 - **018** — brainstorm divergence expansion: each model reframes the initial prompt, all models work all prompt variants; optional future domain collisions
@@ -62,6 +62,7 @@ Triage pattern: fix P1/P2 with code, create TODOs for P3/nitpicks, reply to ever
 
 - PR #28 / `feat/brainstorm-verb` merged the brainstorm verb: core loop in `refinery_core::brainstorm::run()`, scoring in `refinery_core::scoring`, prompts in `prompts/brainstorm.rs`, CLI in `commands/brainstorm.rs`.
 - PR #29 merged post-merge documentation cleanup: brainstorm TODO 004 completed, wording TODOs 014/015 completed, handoff updated.
+- 2026-05-21 brainstorm smoke test field report completed (`todos/019`, `docs/brainstorms/2026-05-21-brainstorm-smoke-test-field-report.md`). Result: not a valid multi-model baseline because only `codex-cli/gpt-5.4` produced usable responses; Claude failed with 403/no access and Gemini hit capacity/quota. Created `todos/020-brainstorm-provider-failure-observability.md` because partial provider failures can look like successful single-provider brainstorms with zero/no eval scores.
 - 2026-05-21 local repo sync/cleanup completed: local `main` fast-forwarded to `origin/main` (`de1f051`), obsolete local brainstorm branches deleted, working tree clean before this handoff update branch.
 - PR #28 verification before merge: `cargo fmt --all -- --check`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings` passed after CodeRabbit follow-up fixes.
 - Brainstorm divergence discussion captured in `docs/plans/2026-03-31-001-feat-brainstorm-verb-plan.md` addendum and `todos/018-brainstorm-divergence-expansion.md`: v0 preserves divergence through score-only controversial selection; future work should inject divergence via prompt reframing (`n(n+1)` lineages) and optional Open Collider-style domain collisions (`n(1+p)d` lineages).
@@ -71,7 +72,8 @@ Triage pattern: fix P1/P2 with code, create TODOs for P3/nitpicks, reply to ever
 
 Recommended order:
 
-1. Start from clean `main` and read this handoff plus `todos/019-brainstorm-smoke-test-field-report.md`.
-2. Run real `refinery brainstorm` smoke tests and capture a short field report before adding new strategies.
-3. Use the field report to decide whether to do small polish first (`todos/017`) or create a dedicated implementation plan for prompt reframing (`todos/018`).
-4. Do not implement Open Collider-style domain collisions before establishing the v0 brainstorm baseline and budget constraints.
+1. Start from clean `main` and read this handoff plus `todos/020-brainstorm-provider-failure-observability.md` and the field report in `docs/brainstorms/2026-05-21-brainstorm-smoke-test-field-report.md`.
+2. Fix/plan provider failure observability before running more brainstorm strategy work; degraded single-provider runs currently look too much like successful brainstorms.
+3. Re-run the smoke matrix after at least two providers are available to establish the v0 brainstorm baseline.
+4. Then decide whether to do small polish first (`todos/017`) or create a dedicated implementation plan for prompt reframing (`todos/018`).
+5. Do not implement Open Collider-style domain collisions before establishing the v0 brainstorm baseline and budget constraints.
