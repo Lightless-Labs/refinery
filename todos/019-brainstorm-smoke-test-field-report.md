@@ -4,6 +4,8 @@ priority: medium
 milestone: v0.3
 depends_on: 004-verb-brainstorm
 created: 2026-05-21
+status: completed
+completed: 2026-05-21
 ---
 
 # Brainstorm Smoke Tests and Field Report
@@ -40,7 +42,11 @@ If provider credentials or local CLIs are unavailable, record the blocker explic
 
 ## Deliverable
 
-Create a short field report under `docs/solutions/` or `docs/brainstorms/` with:
+Completed in `docs/brainstorms/2026-05-21-brainstorm-smoke-test-field-report.md`.
+
+The run generated follow-up `todos/020-brainstorm-provider-failure-observability.md` because provider failures can make a requested multi-provider brainstorm look like a successful single-provider run.
+
+Original deliverable requirements:
 
 - commands run
 - models used
