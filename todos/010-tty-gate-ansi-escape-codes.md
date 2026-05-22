@@ -1,4 +1,14 @@
+---
+title: "fix: TTY-gate ANSI escape codes in progress output"
+priority: low
+milestone: v0.3
+status: completed
+completed: 2026-05-22
+---
+
 # TTY-gate ANSI escape codes in progress output
+
+Completed in implementation plan `docs/plans/2026-05-22-002-fix-tty-gate-ansi-escape-codes-plan.md`.
 
 ## Problem
 

@@ -284,6 +284,7 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
     let semaphore = Arc::new(Semaphore::new(permits));
 
     eprintln!("\n  ── synthesize ──");
+    let use_color = std::io::stderr().is_terminal();
 
     let timeout = Duration::from_secs(shared.timeout);
     let mut synthesis_proposals: HashMap<ModelId, String> = HashMap::new();
@@ -322,25 +323,35 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
                     .unwrap_or(response);
                 if synthesis.trim().is_empty() {
                     eprintln!(
-                        "    \x1b[31m✗\x1b[0m {model_id} returned an empty synthesis, skipping"
+                        "    {} {model_id} returned an empty synthesis, skipping",
+                        colorize(use_color, "31", "✗")
                     );
                     continue;
                 }
                 let preview = refinery_core::progress::preview(&synthesis, 60);
-                eprintln!("    \x1b[32m✓\x1b[0m {model_id} synthesized — \"{preview}\"");
+                eprintln!(
+                    "    {} {model_id} synthesized — \"{preview}\"",
+                    colorize(use_color, "32", "✓")
+                );
                 synthesis_proposals.insert(model_id, synthesis);
             }
             Ok((model_id, Ok(Err(e)))) => {
                 synthesis_attempt_count += 1;
-                eprintln!("    \x1b[31m✗\x1b[0m {model_id} synthesis failed — {e}");
+                eprintln!(
+                    "    {} {model_id} synthesis failed — {e}",
+                    colorize(use_color, "31", "✗")
+                );
             }
             Ok((model_id, Err(_))) => {
                 synthesis_attempt_count += 1;
-                eprintln!("    \x1b[31m✗\x1b[0m {model_id} synthesis timed out");
+                eprintln!(
+                    "    {} {model_id} synthesis timed out",
+                    colorize(use_color, "31", "✗")
+                );
             }
             Err(e) => {
                 synthesis_attempt_count += 1;
-                eprintln!("    \x1b[31m✗\x1b[0m task panicked: {e}");
+                eprintln!("    {} task panicked: {e}", colorize(use_color, "31", "✗"));
             }
         }
     }
@@ -471,25 +482,38 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
                         .and_then(|r| r.as_str())
                         .unwrap_or("");
                     let preview = refinery_core::progress::preview(rationale, 60);
-                    eprintln!("    \x1b[32m✓\x1b[0m {from} → {to}: {score:.1} — \"{preview}\"");
+                    eprintln!(
+                        "    {} {from} → {to}: {score:.1} — \"{preview}\"",
+                        colorize(use_color, "32", "✓")
+                    );
                     synthesis_scores.entry(to).or_default().push(score);
                 } else {
                     eprintln!(
-                        "    \x1b[31m✗\x1b[0m {from} → {to} eval returned invalid score, skipping"
+                        "    {} {from} → {to} eval returned invalid score, skipping",
+                        colorize(use_color, "31", "✗")
                     );
                 }
             }
             Ok((from, to, Ok(Err(e)))) => {
                 eval_count += 1;
-                eprintln!("    \x1b[31m✗\x1b[0m {from} → {to} eval failed — {e}");
+                eprintln!(
+                    "    {} {from} → {to} eval failed — {e}",
+                    colorize(use_color, "31", "✗")
+                );
             }
             Ok((from, to, Err(_))) => {
                 eval_count += 1;
-                eprintln!("    \x1b[31m✗\x1b[0m {from} → {to} eval timed out");
+                eprintln!(
+                    "    {} {from} → {to} eval timed out",
+                    colorize(use_color, "31", "✗")
+                );
             }
             Err(e) => {
                 eval_count += 1;
-                eprintln!("    \x1b[31m✗\x1b[0m eval task panicked: {e}");
+                eprintln!(
+                    "    {} eval task panicked: {e}",
+                    colorize(use_color, "31", "✗")
+                );
             }
         }
     }
@@ -527,7 +551,10 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
             .cloned()
             .unwrap_or_default();
 
-        eprintln!("  \x1b[32m→ Best synthesis:\x1b[0m {winner_id} ({best_score:.1})");
+        eprintln!(
+            "  {} {winner_id} ({best_score:.1})",
+            colorize(use_color, "32", "→ Best synthesis:")
+        );
 
         // Build all_answers for output
         let all_synthesis_answers: Vec<AnswerOutput> = synthesis_proposals
@@ -618,7 +645,11 @@ fn emit_synthesis_result(
     elapsed: Duration,
     rounds: &[RoundOutcome],
 ) -> ExitCode {
-    eprintln!("  \x1b[32m→ Best synthesis:\x1b[0m {winner_id}");
+    let use_color = std::io::stderr().is_terminal();
+    eprintln!(
+        "  {} {winner_id}",
+        colorize(use_color, "32", "→ Best synthesis:")
+    );
 
     let all_synthesis_answers: Vec<AnswerOutput> = all
         .iter()
@@ -669,6 +700,14 @@ fn emit_synthesis_result(
     ExitCode::SUCCESS
 }
 
+fn colorize(use_color: bool, ansi_code: &str, text: &str) -> String {
+    if use_color {
+        format!("\x1b[{ansi_code}m{text}\x1b[0m")
+    } else {
+        text.to_string()
+    }
+}
+
 fn print_json_stdout<T: Serialize>(value: &T, context: &str) -> Result<(), ExitCode> {
     match serde_json::to_string_pretty(value) {
         Ok(json) => {
@@ -692,5 +731,20 @@ fn print_json_stderr<T: Serialize>(value: &T, context: &str) -> Result<(), ExitC
             eprintln!("Failed to serialize {context}: {e}");
             Err(ExitCode::from(1))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::colorize;
+
+    #[test]
+    fn colorize_omits_ansi_when_disabled() {
+        assert_eq!(colorize(false, "32", "✓"), "✓");
+    }
+
+    #[test]
+    fn colorize_wraps_with_ansi_when_enabled() {
+        assert_eq!(colorize(true, "31", "✗"), "\x1b[31m✗\x1b[0m");
     }
 }
