@@ -50,7 +50,6 @@ Check `todos/` for the full list. Key ones:
 - **021** — evaluate TOON (`toon-format/toon`) for prompt-facing artifact export / benchmark fixtures
 - **011** — evolve verb (designed, not started)
 - **010** — TTY-gate ANSI escape codes (affects all verbs)
-- **016** — JSON serialization consistency follow-up; partially addressed in PR #28, verify remaining synthesize paths before closing
 
 ## CodeRabbit Review Process
 
@@ -67,6 +66,7 @@ Triage pattern: fix P1/P2 with code, create TODOs for P3/nitpicks, reply to ever
 - 2026-05-21 brainstorm provider failure observability completed (`todos/020`, `docs/plans/2026-05-21-001-fix-brainstorm-provider-failure-observability-plan.md`): core tracks proposal/evaluation failures, CLI JSON/text exposes degraded runs, unevaluated scores serialize as null, and artifact output includes `provider-failures.json`. Verified with `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and a manual degraded `claude-code,codex-cli` smoke.
 - PR #31 merged 2026-05-22: `fix: surface degraded brainstorm runs`.
 - PR #32 merged 2026-05-22: `chore: address brainstorm P3 nitpicks` (`todos/017` completed). Adds JSON dry-run output for converge/synthesize/brainstorm, explicit empty-provider validation in `brainstorm::run()`, and `ScoreHistoryEntry { proposal, mean_score }`.
+- 2026-05-22 JSON serialization follow-up completed (`todos/016`, `docs/plans/2026-05-22-001-fix-json-serialization-failures-plan.md`): remaining silent `serde_json::to_string_pretty` handling in synthesize output paths now logs serialization errors and returns non-zero where appropriate. Verified with `cargo fmt --all -- --check`, `cargo test -p refinery_cli`, `cargo clippy -p refinery_cli --all-targets -- -D warnings`, and an `rg` check for the old silent pattern.
 - 2026-05-21 local repo sync/cleanup completed: local `main` fast-forwarded to `origin/main` (`de1f051`), obsolete local brainstorm branches deleted, working tree clean before this handoff update branch.
 - PR #28 verification before merge: `cargo fmt --all -- --check`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings` passed after CodeRabbit follow-up fixes.
 - Brainstorm divergence discussion captured in `docs/plans/2026-03-31-001-feat-brainstorm-verb-plan.md` addendum and `todos/018-brainstorm-divergence-expansion.md`: v0 preserves divergence through score-only controversial selection; future work should inject divergence via prompt reframing (`n(n+1)` lineages) and optional Open Collider-style domain collisions (`n(1+p)d` lineages).
