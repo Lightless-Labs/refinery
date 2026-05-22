@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Combines a provider name (e.g. `claude-code`) and a model name (e.g. `claude-opus-4-6`).
 /// Display format is `provider/model`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ModelId {
     provider: String,
     model: String,

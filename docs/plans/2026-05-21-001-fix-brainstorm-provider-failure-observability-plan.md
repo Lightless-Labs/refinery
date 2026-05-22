@@ -9,6 +9,9 @@ todo: 020-brainstorm-provider-failure-observability
 
 # Brainstorm Provider Failure Observability Plan
 
+**Reviewed:** 2026-05-21 (via `/coderabbit / review`)
+**Completed:** 2026-05-21
+
 ## Problem
 
 `refinery brainstorm` can request multiple providers, have one provider produce usable proposals, and still emit a clean-looking successful result with zero/no evaluation scores. This makes smoke tests and strategy benchmarks unreliable.

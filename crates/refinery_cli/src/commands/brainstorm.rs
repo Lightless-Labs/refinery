@@ -10,8 +10,8 @@ use refinery_core::brainstorm::{
 use refinery_core::types::ModelId;
 
 use super::common::{
-    ErrorResponse, MetadataOutput, OutputFormat, SharedArgs, build_providers, init_tracing,
-    make_run_dir, resolve_prompt,
+    MetadataOutput, OutputFormat, SharedArgs, build_providers, init_tracing, make_run_dir,
+    resolve_prompt,
 };
 
 #[derive(Parser, Debug)]
@@ -164,13 +164,7 @@ fn emit_success(
     elapsed: std::time::Duration,
 ) -> ExitCode {
     if result.panel.is_empty() {
-        emit_error(
-            shared,
-            "brainstorm_failed",
-            "No answers survived to panel selection.",
-            "brainstorm",
-        );
-        return ExitCode::from(1);
+        return emit_empty_panel_error(shared, result);
     }
 
     match shared.output_format {
@@ -259,7 +253,7 @@ fn emit_text_success(result: &BrainstormResult, elapsed: std::time::Duration) {
     println!("\n── Panel ({} answers) ──\n", result.panel.len());
     for (i, candidate) in result.panel.iter().enumerate() {
         if candidate.per_evaluator_scores.is_empty() {
-            println!("#{} — {} (not evaluated)", i + 1, candidate.model_id,);
+            println!("#{} — {} (not evaluated)", i + 1, candidate.model_id);
         } else {
             println!(
                 "#{} — {} (mean: {:.1}, stddev: {:.2}, controversy: {:.2})",
@@ -306,6 +300,51 @@ fn failed_model_ids_from_failures(failures: &[BrainstormProviderFailure]) -> Vec
     ids
 }
 
+fn emit_empty_panel_error(shared: &SharedArgs, result: &BrainstormResult) -> ExitCode {
+    let message = "No answers survived to panel selection.";
+    match shared.output_format {
+        OutputFormat::Json => {
+            let err = BrainstormErrorJsonOutput {
+                status: "error".to_string(),
+                error: super::common::ErrorDetail {
+                    code: "brainstorm_failed".to_string(),
+                    message: message.to_string(),
+                    provider: None,
+                    round: None,
+                    phase: Some("brainstorm".to_string()),
+                    retryable: true,
+                },
+                provider_failures: result
+                    .provider_failures
+                    .iter()
+                    .map(provider_failure_output)
+                    .collect(),
+                metadata: BrainstormErrorMetadata {
+                    total_rounds: result.rounds_completed,
+                    total_calls: result.total_calls,
+                    models_dropped: result
+                        .failed_model_ids()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect(),
+                },
+            };
+            match serde_json::to_string_pretty(&err) {
+                Ok(json) => eprintln!("{json}"),
+                Err(e) => eprintln!("{message} (also failed to serialize JSON error: {e})"),
+            }
+        }
+        OutputFormat::Text => {
+            eprintln!("{message}");
+            for failure in &result.provider_failures {
+                eprintln!("{}", format_provider_failure(failure));
+            }
+        }
+    }
+
+    ExitCode::from(1)
+}
+
 fn emit_brainstorm_error(shared: &SharedArgs, error: &BrainstormError) -> ExitCode {
     match shared.output_format {
         OutputFormat::Json => {
@@ -344,29 +383,4 @@ fn emit_brainstorm_error(shared: &SharedArgs, error: &BrainstormError) -> ExitCo
     }
 
     ExitCode::from(1)
-}
-
-fn emit_error(shared: &SharedArgs, code: &str, message: &str, phase: &str) {
-    match shared.output_format {
-        OutputFormat::Json => {
-            let err = ErrorResponse {
-                status: "error".to_string(),
-                error: super::common::ErrorDetail {
-                    code: code.to_string(),
-                    message: message.to_string(),
-                    provider: None,
-                    round: None,
-                    phase: Some(phase.to_string()),
-                    retryable: true,
-                },
-            };
-            match serde_json::to_string_pretty(&err) {
-                Ok(json) => eprintln!("{json}"),
-                Err(e) => eprintln!("{message} (also failed to serialize JSON error: {e})"),
-            }
-        }
-        OutputFormat::Text => {
-            eprintln!("{message}");
-        }
-    }
 }
