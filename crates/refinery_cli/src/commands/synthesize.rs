@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
+use serde::Serialize;
 use tokio::sync::Semaphore;
 use tracing::info;
 
@@ -186,9 +187,7 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
                         status: "error".to_string(),
                         error: converge_error_to_detail(&e),
                     };
-                    if let Ok(json) = serde_json::to_string_pretty(&err_response) {
-                        eprintln!("{json}");
-                    }
+                    let _ = print_json_stderr(&err_response, "converge error response");
                 }
                 OutputFormat::Text => eprintln!("Error during converge phase: {e}"),
             }
@@ -236,8 +235,8 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
                         models_dropped: vec![],
                     },
                 };
-                if let Ok(json) = serde_json::to_string_pretty(&json_output) {
-                    println!("{json}");
+                if let Err(code) = print_json_stdout(&json_output, "no-qualifying-answers output") {
+                    return code;
                 }
             }
             OutputFormat::Text => {
@@ -364,9 +363,7 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
                         retryable: true,
                     },
                 };
-                if let Ok(json) = serde_json::to_string_pretty(&err) {
-                    eprintln!("{json}");
-                }
+                let _ = print_json_stderr(&err, "synthesis error response");
             }
             OutputFormat::Text => {
                 eprintln!("All models failed to produce syntheses.");
@@ -563,8 +560,8 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
                         models_dropped: vec![],
                     },
                 };
-                if let Ok(json) = serde_json::to_string_pretty(&json_output) {
-                    println!("{json}");
+                if let Err(code) = print_json_stdout(&json_output, "synthesis output") {
+                    return code;
                 }
             }
             OutputFormat::Text => {
@@ -599,9 +596,7 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
                         retryable: true,
                     },
                 };
-                if let Ok(json) = serde_json::to_string_pretty(&err) {
-                    eprintln!("{json}");
-                }
+                let _ = print_json_stderr(&err, "synthesis evaluation error response");
             }
             OutputFormat::Text => {
                 eprintln!("No synthesis evaluations completed.");
@@ -652,8 +647,8 @@ fn emit_synthesis_result(
                     models_dropped: vec![],
                 },
             };
-            if let Ok(json) = serde_json::to_string_pretty(&json_output) {
-                println!("{json}");
+            if let Err(code) = print_json_stdout(&json_output, "synthesis output") {
+                return code;
             }
         }
         OutputFormat::Text => {
@@ -672,4 +667,30 @@ fn emit_synthesis_result(
     }
 
     ExitCode::SUCCESS
+}
+
+fn print_json_stdout<T: Serialize>(value: &T, context: &str) -> Result<(), ExitCode> {
+    match serde_json::to_string_pretty(value) {
+        Ok(json) => {
+            println!("{json}");
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Failed to serialize {context}: {e}");
+            Err(ExitCode::from(1))
+        }
+    }
+}
+
+fn print_json_stderr<T: Serialize>(value: &T, context: &str) -> Result<(), ExitCode> {
+    match serde_json::to_string_pretty(value) {
+        Ok(json) => {
+            eprintln!("{json}");
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Failed to serialize {context}: {e}");
+            Err(ExitCode::from(1))
+        }
+    }
 }

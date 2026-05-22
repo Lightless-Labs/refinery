@@ -2,9 +2,13 @@
 title: "fix: handle JSON serialization failures in all verb output paths"
 priority: low
 milestone: v0.3
+status: completed
+completed: 2026-05-22
 ---
 
 # Handle JSON Serialization Failures
+
+Completed in implementation plan `docs/plans/2026-05-22-001-fix-json-serialization-failures-plan.md`.
 
 ## Problem
 
