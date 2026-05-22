@@ -9,6 +9,9 @@ todo: 017-brainstorm-p3-nitpicks
 
 # Brainstorm P3 Nitpicks Plan
 
+**Reviewed:** 2026-05-22 (via `/coderabbit / review`)
+**Completed:** 2026-05-21
+
 ## Problem
 
 CodeRabbit P3 nitpicks remain after the brainstorm verb merge:
