@@ -83,7 +83,7 @@ impl BrainstormResult {
             .iter()
             .map(|failure| failure.model_id.clone())
             .collect();
-        ids.sort_by_key(ToString::to_string);
+        ids.sort();
         ids.dedup();
         ids
     }
@@ -106,6 +106,10 @@ impl std::fmt::Display for BrainstormError {
 }
 
 impl std::error::Error for BrainstormError {}
+
+fn join_error_model_id() -> ModelId {
+    ModelId::from_parts("unknown", "join-error")
+}
 
 /// Run the brainstorm loop: score-only iteration + controversial panel selection.
 ///
@@ -219,7 +223,7 @@ pub async fn run(
                     provider_failures.push(BrainstormProviderFailure {
                         round,
                         phase: Phase::Propose,
-                        model_id: ModelId::new("unknown/join-error"),
+                        model_id: join_error_model_id(),
                         target_model_id: None,
                         message: err.to_string(),
                     });
@@ -230,6 +234,11 @@ pub async fn run(
         total_calls += propose_count;
 
         if round_proposals.is_empty() {
+            if let Some(ref dir) = config.output_dir {
+                if let Err(e) = save_provider_failures(dir, &provider_failures) {
+                    eprintln!("Warning: failed to save provider failures: {e}");
+                }
+            }
             return Err(BrainstormError {
                 round,
                 message: "All models failed to propose.".to_string(),
@@ -379,7 +388,7 @@ pub async fn run(
                     provider_failures.push(BrainstormProviderFailure {
                         round,
                         phase: Phase::Evaluate,
-                        model_id: ModelId::new("unknown/join-error"),
+                        model_id: join_error_model_id(),
                         target_model_id: None,
                         message: err.to_string(),
                     });
@@ -544,7 +553,7 @@ fn save_provider_failures(
                 "phase": failure.phase.to_string(),
                 "model_id": failure.model_id.to_string(),
                 "target_model_id": failure.target_model_id.as_ref().map(ToString::to_string),
-                "message": failure.message,
+                "message": &failure.message,
             })
         })
         .collect();
