@@ -3,9 +3,15 @@ title: "research: benchmark iteration and selection strategies for brainstorm ve
 priority: low
 milestone: v0.4
 depends_on: 004-verb-brainstorm
+status: in_progress
+updated: 2026-05-23
 ---
 
 # Benchmark: Brainstorm Iteration and Selection Strategies
+
+**Plan:** `docs/plans/2026-05-23-001-research-brainstorm-strategy-benchmarks-plan.md`
+
+**Phase 1 deliverable:** `docs/brainstorms/2026-05-23-brainstorm-strategy-benchmark-design.md`
 
 ## Goal
 
@@ -44,10 +50,22 @@ Prompt variations should not be paraphrases. They should alter assumptions, succ
 
 ## Benchmark Design
 
-TBD — needs a way to evaluate "panel quality" itself. Possible:
-- Human evaluation of panel diversity and quality
-- Automated: measure topic coverage across panel members
-- Automated: pairwise similarity within the panel (lower = more diverse)
+Initial design completed 2026-05-23. Use a staged protocol:
+
+1. **L0 offline selector counterfactuals** over existing artifacts.
+2. **L1 repeated v0 baseline** across a fixed prompt suite.
+3. **L2 iteration strategy variants** (blind, score-only, own+reviews, full visibility).
+4. **L3 upstream divergence expansion** (prompt reframing first; domain collisions only after budget review).
+
+Panel quality should combine:
+
+- automated quality/score metrics,
+- lexical/semantic diversity diagnostics,
+- degradation/provider-failure rates,
+- meta-preamble/noise rates,
+- whole-panel human or calibrated model-judge review for useful diversity, actionability, novelty, and regret.
+
+First offline counterfactual on the valid 2026-05-23 baseline found that controversy selection differs meaningfully from mean-only selection and often includes MiniMax's high-disagreement answers. Next concrete step: implement an artifact analyzer that loads a brainstorm run directory and emits selector counterfactuals + panel metrics as JSON.
 
 ## References
 
