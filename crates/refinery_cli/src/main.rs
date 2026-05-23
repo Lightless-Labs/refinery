@@ -36,6 +36,9 @@ enum Command {
     /// panel of high-quality, controversial answers — those that evaluators
     /// genuinely disagree about.
     Brainstorm(commands::brainstorm::BrainstormArgs),
+
+    /// Analyze brainstorm artifacts and compare panel selection strategies.
+    BenchmarkBrainstorm(commands::benchmark_brainstorm::BenchmarkBrainstormArgs),
 }
 
 fn main() -> ExitCode {
@@ -69,5 +72,6 @@ async fn async_main() -> ExitCode {
         Command::Converge(args) => commands::converge::run(args).await,
         Command::Synthesize(args) => commands::synthesize::run(args).await,
         Command::Brainstorm(args) => commands::brainstorm::run(args).await,
+        Command::BenchmarkBrainstorm(args) => commands::benchmark_brainstorm::run(&args),
     }
 }

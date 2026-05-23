@@ -115,28 +115,32 @@ Until `todos/022` is fixed, OpenCode-heavy panels should run with `--max-concurr
 
 Completed in `docs/brainstorms/2026-05-23-brainstorm-strategy-benchmark-design.md` using the two valid baseline artifacts.
 
+## Implementation Progress
+
+### Completed 2026-05-23
+
+Added `refinery benchmark-brainstorm` as the artifact-level analyzer. It can:
+
+1. Load one or more brainstorm run directories.
+2. Read final-round proposals and evaluations.
+3. Emit selector counterfactuals and panel metrics as JSON or text.
+4. Compare `mean`, `stddev`, `controversy`, and `quality_x_lexdiv` selectors.
+
+This gives future strategy variants a shared measurement path.
+
 ## Next Implementation Step
 
-Add an artifact-level benchmark/analyzer command or test fixture that can:
-
-1. Load a brainstorm run directory.
-2. Read final-round proposals and evaluations.
-3. Emit selector counterfactuals and panel metrics as JSON.
-4. Later aggregate multiple runs into a benchmark report.
-
-This should be implemented before adding new strategy variants so every strategy can be measured with the same tooling.
+Use the analyzer across a 6-prompt v0 baseline suite, then implement the minimal iteration-strategy variants (`blind`, `score-only`, `own+reviews`, `full-visibility`) behind an internal benchmark configuration.
 
 ## Verification
 
-Documentation/research phase:
+Completed:
 
 - Plan created.
 - Baseline field report reviewed.
 - Offline counterfactual metrics computed from existing artifacts.
-- TODO updated with addendum.
-
-Future implementation phase:
-
+- Artifact analyzer implemented as `refinery benchmark-brainstorm`.
+- Analyzer run against the two valid 2026-05-23 baseline artifacts.
 - `cargo fmt --all -- --check`
-- `cargo test --workspace`
-- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test -p refinery_cli`
+- `cargo clippy -p refinery_cli --all-targets -- -D warnings`
