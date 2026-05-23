@@ -44,7 +44,7 @@ See `memory/verb_architecture.md` for full taxonomy with consistent terminology.
 
 Check `todos/` for the full list. Key ones:
 
-- **013** — brainstorm strategy benchmarks (post-v0), now including prompt-reframing and Open Collider-style domain-collision baselines
+- **013** — brainstorm strategy benchmarks (in progress): phase-1 benchmark design completed; next step is artifact analyzer for selector counterfactuals + panel metrics
 - **018** — brainstorm divergence expansion: each model reframes the initial prompt, all models work all prompt variants; optional future domain collisions
 - **021** — evaluate TOON (`toon-format/toon`) for prompt-facing artifact export / benchmark fixtures
 - **011** — evolve verb (designed, not started)
@@ -67,6 +67,7 @@ Triage pattern: fix P1/P2 with code, create TODOs for P3/nitpicks, reply to ever
 - 2026-05-22 JSON serialization follow-up completed (`todos/016`, `docs/plans/2026-05-22-001-fix-json-serialization-failures-plan.md`): remaining silent `serde_json::to_string_pretty` handling in synthesize output paths now logs serialization errors and returns non-zero where appropriate. Verified with `cargo fmt --all -- --check`, `cargo test -p refinery_cli`, `cargo clippy -p refinery_cli --all-targets -- -D warnings`, and an `rg` check for the old silent pattern.
 - 2026-05-22 TTY ANSI follow-up completed (`todos/010`, `docs/plans/2026-05-22-002-fix-tty-gate-ansi-escape-codes-plan.md`): direct synthesize progress logs now colorize only when stderr is a TTY; non-TTY logs keep plain symbols with no raw ANSI color escapes. Added helper tests and verified with `cargo fmt --all -- --check`, `cargo test -p refinery_cli`, and `cargo clippy -p refinery_cli --all-targets -- -D warnings`.
 - 2026-05-23 valid brainstorm smoke baseline completed with Codex + GLM + Kimi + MiniMax (`docs/brainstorms/2026-05-23-brainstorm-smoke-baseline.md`). Successful runs used `--max-concurrent 1`; both product and technical prompts completed non-degraded with 32 calls, peer evaluations, and controversial panel selection. `todos/013` and `todos/018` are now unblocked for benchmark/prompt-reframing planning. Created `todos/022-opencode-concurrency-sqlite-wal.md` after parallel OpenCode-backed runs hit `PRAGMA journal_mode = WAL` startup failures.
+- 2026-05-23 brainstorm strategy benchmark design started for `todos/013` (`docs/plans/2026-05-23-001-research-brainstorm-strategy-benchmarks-plan.md`, `docs/brainstorms/2026-05-23-brainstorm-strategy-benchmark-design.md`). Defined L0/L1/L2/L3 benchmark protocol, prompt suite, metrics, budget model, and first offline selector counterfactuals on the valid baseline. Recommendation: implement an artifact analyzer before adding new strategy variants.
 - 2026-05-21 local repo sync/cleanup completed: local `main` fast-forwarded to `origin/main` (`de1f051`), obsolete local brainstorm branches deleted, working tree clean before this handoff update branch.
 - PR #28 verification before merge: `cargo fmt --all -- --check`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings` passed after CodeRabbit follow-up fixes.
 - Brainstorm divergence discussion captured in `docs/plans/2026-03-31-001-feat-brainstorm-verb-plan.md` addendum and `todos/018-brainstorm-divergence-expansion.md`: v0 preserves divergence through score-only controversial selection; future work should inject divergence via prompt reframing (`n(n+1)` lineages) and optional Open Collider-style domain collisions (`n(1+p)d` lineages).
@@ -77,6 +78,6 @@ Triage pattern: fix P1/P2 with code, create TODOs for P3/nitpicks, reply to ever
 Recommended order:
 
 1. Start from clean `main` and read this handoff plus the valid baseline in `docs/brainstorms/2026-05-23-brainstorm-smoke-baseline.md`.
-2. Create a dedicated implementation plan for `todos/013` benchmark design or `todos/018` prompt reframing if continuing brainstorm strategy work.
+2. If continuing `todos/013`, implement the artifact analyzer described in `docs/brainstorms/2026-05-23-brainstorm-strategy-benchmark-design.md` before adding new strategy variants.
 3. Consider addressing `todos/022` before running more OpenCode-heavy multi-model panels; for now use `--max-concurrent 1` with multiple OpenCode-backed models.
 4. Do not implement Open Collider-style domain collisions before benchmark budget constraints are explicit.
