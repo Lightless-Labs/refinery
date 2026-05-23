@@ -222,19 +222,30 @@ Because OpenCode currently needs serial execution, elapsed wall-clock is a real 
 5. **Add whole-panel judging.** The final goal is panel usefulness, not individual answer score.
 6. **Suppress score-history meta-preambles before polished demos.** They are measurable as a benchmark artifact quality issue.
 
-## Next Concrete Step
+## Implemented Analyzer
 
-Implement a local artifact analyzer that accepts a brainstorm run directory and emits JSON like:
+`refinery benchmark-brainstorm` now accepts one or more brainstorm run directories and emits selector counterfactuals plus panel metrics:
 
-```json
-{
-  "run_dir": "...",
-  "candidate_count": 4,
-  "selectors": {
-    "mean": { "panel": ["..."], "metrics": { "panel_mean_quality": 7.9 } },
-    "controversy": { "panel": ["..."], "metrics": { "lexical_overlap": 0.07 } }
-  }
-}
+```sh
+refinery benchmark-brainstorm path/to/run-dir --output-format json
 ```
 
-This can start as a hidden CLI subcommand or a small dev tool, but should use the same Rust scoring functions as production to avoid drift.
+The initial implementation compares:
+
+- `mean`
+- `stddev`
+- `controversy`
+- `quality_x_lexdiv`
+
+It reports:
+
+- selected panel members,
+- `panel_mean_quality`,
+- `panel_min_quality`,
+- `panel_disagreement`,
+- `lexical_overlap`,
+- `meta_preamble_rate`.
+
+## Next Concrete Step
+
+Use the analyzer across the 6-prompt v0 baseline suite, then add minimal benchmark-only iteration variants (`blind`, `score-only`, `own+reviews`, `full-visibility`) so the same analyzer can compare their final panels.

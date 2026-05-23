@@ -13,6 +13,8 @@ updated: 2026-05-23
 
 **Phase 1 deliverable:** `docs/brainstorms/2026-05-23-brainstorm-strategy-benchmark-design.md`
 
+**Phase 2 deliverable:** `refinery benchmark-brainstorm` artifact analyzer
+
 ## Goal
 
 After brainstorm v0 ships (score-only iteration + controversial selection), benchmark alternative strategies on both axes to find what actually produces the best diverse panels.
@@ -65,7 +67,9 @@ Panel quality should combine:
 - meta-preamble/noise rates,
 - whole-panel human or calibrated model-judge review for useful diversity, actionability, novelty, and regret.
 
-First offline counterfactual on the valid 2026-05-23 baseline found that controversy selection differs meaningfully from mean-only selection and often includes MiniMax's high-disagreement answers. Next concrete step: implement an artifact analyzer that loads a brainstorm run directory and emits selector counterfactuals + panel metrics as JSON.
+First offline counterfactual on the valid 2026-05-23 baseline found that controversy selection differs meaningfully from mean-only selection and often includes MiniMax's high-disagreement answers.
+
+The artifact analyzer is now implemented as `refinery benchmark-brainstorm`. Next concrete step: use it across the 6-prompt v0 baseline suite, then add benchmark-only iteration variants (`blind`, `score-only`, `own+reviews`, `full-visibility`).
 
 ## References
 
