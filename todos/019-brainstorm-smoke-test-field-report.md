@@ -44,7 +44,9 @@ If provider credentials or local CLIs are unavailable, record the blocker explic
 
 Completed in `docs/brainstorms/2026-05-21-brainstorm-smoke-test-field-report.md`.
 
-The run generated follow-up `todos/020-brainstorm-provider-failure-observability.md` because provider failures can make a requested multi-provider brainstorm look like a successful single-provider run.
+The first run generated follow-up `todos/020-brainstorm-provider-failure-observability.md` because provider failures can make a requested multi-provider brainstorm look like a successful single-provider run.
+
+A later valid four-model baseline was completed in `docs/brainstorms/2026-05-23-brainstorm-smoke-baseline.md` using Codex, GLM, Kimi, and MiniMax with `--max-concurrent 1`.
 
 Original deliverable requirements:
 
