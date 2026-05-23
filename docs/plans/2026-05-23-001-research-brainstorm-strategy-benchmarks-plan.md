@@ -124,13 +124,13 @@ Added `refinery benchmark-brainstorm` as the artifact-level analyzer. It can:
 1. Load one or more brainstorm run directories.
 2. Read final-round proposals and evaluations.
 3. Emit selector counterfactuals and panel metrics as JSON or text.
-4. Compare `mean`, `stddev`, `controversy`, and `quality_x_lexdiv` selectors.
+4. Compare `mean`, `stddev`, `controversy`, `controversy_floor_7`, and `quality_x_lexdiv` selectors.
 
 This gives future strategy variants a shared measurement path.
 
 ## Next Implementation Step
 
-Use the analyzer across a 6-prompt v0 baseline suite, then implement the minimal iteration-strategy variants (`blind`, `score-only`, `own+reviews`, `full-visibility`) behind an internal benchmark configuration.
+The analyzer has now been used across a 6-prompt v0 baseline suite (`docs/brainstorms/2026-05-23-six-prompt-brainstorm-benchmark.md`). Next, address the two immediate benchmark findings — quality floor (`todos/023`) and score-history meta-preambles (`todos/024`) — before implementing the minimal iteration-strategy variants (`blind`, `score-only`, `own+reviews`, `full-visibility`) behind an internal benchmark configuration.
 
 ## Verification
 
@@ -140,7 +140,7 @@ Completed:
 - Baseline field report reviewed.
 - Offline counterfactual metrics computed from existing artifacts.
 - Artifact analyzer implemented as `refinery benchmark-brainstorm`.
-- Analyzer run against the two valid 2026-05-23 baseline artifacts.
+- Analyzer run against the two valid 2026-05-23 baseline artifacts and the later six-prompt suite.
 - `cargo fmt --all -- --check`
 - `cargo test -p refinery_cli`
 - `cargo clippy -p refinery_cli --all-targets -- -D warnings`

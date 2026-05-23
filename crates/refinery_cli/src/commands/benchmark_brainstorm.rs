@@ -134,6 +134,10 @@ fn analyze_run(run_dir: &Path, panel_size: usize) -> Result<RunBenchmarkOutput, 
             select_by_controversy(&candidates, panel_size),
         ),
         selector_output(
+            "controversy_floor_7",
+            select_by_controversy_with_quality_floor(&candidates, panel_size, 7.0),
+        ),
+        selector_output(
             "quality_x_lexdiv",
             select_by_quality_x_lexdiv(&candidates, panel_size),
         ),
@@ -241,6 +245,44 @@ fn select_by_controversy(candidates: &[Candidate], panel_size: usize) -> Vec<&Ca
             .then_with(|| b.mean_score.total_cmp(&a.mean_score))
             .then_with(|| a.model_id.to_string().cmp(&b.model_id.to_string()))
     });
+    selected.truncate(panel_size);
+    selected
+}
+
+fn select_by_controversy_with_quality_floor(
+    candidates: &[Candidate],
+    panel_size: usize,
+    quality_floor: f64,
+) -> Vec<&Candidate> {
+    let mut selected: Vec<&Candidate> = candidates
+        .iter()
+        .filter(|candidate| candidate.mean_score >= quality_floor)
+        .collect();
+    selected.sort_by(|a, b| {
+        b.controversy_score
+            .total_cmp(&a.controversy_score)
+            .then_with(|| b.mean_score.total_cmp(&a.mean_score))
+            .then_with(|| a.model_id.to_string().cmp(&b.model_id.to_string()))
+    });
+
+    if selected.len() < panel_size {
+        let selected_ids: BTreeSet<ModelId> = selected
+            .iter()
+            .map(|candidate| candidate.model_id.clone())
+            .collect();
+        let mut backfill: Vec<&Candidate> = candidates
+            .iter()
+            .filter(|candidate| !selected_ids.contains(&candidate.model_id))
+            .collect();
+        backfill.sort_by(|a, b| {
+            b.controversy_score
+                .total_cmp(&a.controversy_score)
+                .then_with(|| b.mean_score.total_cmp(&a.mean_score))
+                .then_with(|| a.model_id.to_string().cmp(&b.model_id.to_string()))
+        });
+        selected.extend(backfill);
+    }
+
     selected.truncate(panel_size);
     selected
 }
@@ -453,6 +495,22 @@ mod tests {
             "Based on my Round 1 score, here is a better answer."
         ));
         assert!(!has_meta_preamble("Here is a privacy-first product idea."));
+    }
+
+    #[test]
+    fn controversy_floor_excludes_low_quality_when_possible() {
+        let candidates = vec![
+            candidate("test/high_disagreement_low_quality", "alpha", 5.5, 2.0),
+            candidate("test/solid", "beta", 8.0, 0.0),
+            candidate("test/good", "gamma", 7.5, 0.5),
+        ];
+
+        let selected = select_by_controversy_with_quality_floor(&candidates, 2, 7.0);
+        let selected_ids: Vec<&ModelId> = selected
+            .iter()
+            .map(|candidate| &candidate.model_id)
+            .collect();
+        assert!(!selected_ids.contains(&&ModelId::new("test/high_disagreement_low_quality")));
     }
 
     #[test]

@@ -235,6 +235,7 @@ The initial implementation compares:
 - `mean`
 - `stddev`
 - `controversy`
+- `controversy_floor_7`
 - `quality_x_lexdiv`
 
 It reports:
