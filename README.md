@@ -157,7 +157,7 @@ Compare panel selection strategies for a saved `brainstorm --output-dir` run wit
 refinery benchmark-brainstorm path/to/brainstorm-run --output-format json
 ```
 
-The analyzer loads final-round proposals and evaluations, then emits selector counterfactuals for `mean`, `stddev`, `controversy`, and `quality_x_lexdiv` with panel metrics such as quality, disagreement, lexical overlap, and score-history meta-preamble rate.
+The analyzer loads final-round proposals and evaluations, then emits selector counterfactuals for `mean`, `stddev`, `controversy`, `controversy_floor_7`, and `quality_x_lexdiv` with panel metrics such as quality, disagreement, lexical overlap, and score-history meta-preamble rate.
 
 ### File Input
 

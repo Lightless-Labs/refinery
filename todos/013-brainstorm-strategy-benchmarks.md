@@ -15,6 +15,8 @@ updated: 2026-05-23
 
 **Phase 2 deliverable:** `refinery benchmark-brainstorm` artifact analyzer
 
+**Phase 3 deliverable:** `docs/brainstorms/2026-05-23-six-prompt-brainstorm-benchmark.md`
+
 ## Goal
 
 After brainstorm v0 ships (score-only iteration + controversial selection), benchmark alternative strategies on both axes to find what actually produces the best diverse panels.
@@ -69,7 +71,14 @@ Panel quality should combine:
 
 First offline counterfactual on the valid 2026-05-23 baseline found that controversy selection differs meaningfully from mean-only selection and often includes MiniMax's high-disagreement answers.
 
-The artifact analyzer is now implemented as `refinery benchmark-brainstorm`. Next concrete step: use it across the 6-prompt v0 baseline suite, then add benchmark-only iteration variants (`blind`, `score-only`, `own+reviews`, `full-visibility`).
+The artifact analyzer is now implemented as `refinery benchmark-brainstorm` and has been used across a 6-prompt v0 baseline suite.
+
+Key benchmark result: raw controversy improves lexical diversity but can select low-quality high-disagreement answers. `controversy_floor_7` improved the quality floor while preserving some diversity benefit. Follow-ups created:
+
+- `todos/023-brainstorm-quality-floor-selection.md`
+- `todos/024-brainstorm-suppress-score-history-meta-preambles.md`
+
+Next concrete step: decide whether to land quality-floor/prompt-polish changes before adding benchmark-only iteration variants (`blind`, `score-only`, `own+reviews`, `full-visibility`).
 
 ## References
 
