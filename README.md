@@ -132,6 +132,12 @@ Limit concurrent API calls
 refinery converge "prompt" --models claude-code,codex-cli --max-concurrent 4
 ```
 
+Set brainstorm's panel quality floor (default 7.0; use 0 for raw controversy)
+
+```sh
+refinery brainstorm "prompt" --models claude-code,codex-cli,gemini-cli --quality-floor 7.5
+```
+
 ### Output Formats
 
 Output is plain text by default. Get JSON for programmatic use

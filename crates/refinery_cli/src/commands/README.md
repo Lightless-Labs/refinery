@@ -14,7 +14,7 @@ Each verb is defined by three mostly independent choices:
 |---|---|---|---|---|---|
 | `converge` | Find a single answer that models broadly agree is strong. | Own prior answer + peer reviews. | Correctness/quality scoring. | Vote threshold with stable leader. | Single winner or no consensus. |
 | `synthesize` | Merge the best converged answers into one stronger answer. | Converge phase, then custom synthesis phase. | Synthesis rubric: integration, coherence, completeness, fidelity. | Highest-scoring synthesis. | Single synthesized answer. |
-| `brainstorm` | Explore a solution space and return a diverse panel. | Score-only: each model sees only its own prior answers + scores. | Brainstorm rubric: originality, insight, depth, feasibility. | Controversial: high quality + evaluator disagreement. | Panel of answers. |
+| `brainstorm` | Explore a solution space and return a diverse panel. | Score-only: each model sees only its own prior answers + scores. | Brainstorm rubric: originality, insight, depth, feasibility. | Controversial with quality floor: high quality + evaluator disagreement. | Panel of answers. |
 
 ## `converge`
 
@@ -81,13 +81,13 @@ Mechanics:
 3. Next round, each model sees only its own prior answers and aggregate scores — no peer text or rationales.
 4. Refinery selects a final panel using a diversity-oriented selector.
 
-The current production selector is raw controversy:
+The current production selector is controversy with a configurable quality floor:
 
 ```text
 controversy_score = mean_score * stddev(per_evaluator_scores)
 ```
 
-This favors answers that are both reasonably strong and divisive among evaluators.
+By default, `brainstorm` first considers answers with `mean_score >= 7.0`, ranks those by `controversy_score`, then backfills any remaining panel slots from below-floor candidates by the same controversy order. Set `--quality-floor 0` to use raw controversy for benchmark/debug comparisons.
 
 ### Brainstorm benchmark results
 
@@ -113,7 +113,7 @@ Key findings:
 
 Current follow-ups:
 
-- `todos/023-brainstorm-quality-floor-selection.md` — add/configure quality-floor selection.
+- `todos/023-brainstorm-quality-floor-selection.md` — completed production/configurable quality-floor selection.
 - `todos/024-brainstorm-suppress-score-history-meta-preambles.md` — suppress score-history meta-commentary in final answers.
 - `todos/013-brainstorm-strategy-benchmarks.md` — continue with iteration-strategy benchmarks after quality-floor/prompt-polish decisions.
 

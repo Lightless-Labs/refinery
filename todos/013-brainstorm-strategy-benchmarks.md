@@ -75,10 +75,10 @@ The artifact analyzer is now implemented as `refinery benchmark-brainstorm` and 
 
 Key benchmark result: raw controversy improves lexical diversity but can select low-quality high-disagreement answers. `controversy_floor_7` improved the quality floor while preserving some diversity benefit. Follow-ups created:
 
-- `todos/023-brainstorm-quality-floor-selection.md`
+- `todos/023-brainstorm-quality-floor-selection.md` (completed 2026-05-24)
 - `todos/024-brainstorm-suppress-score-history-meta-preambles.md`
 
-Next concrete step: decide whether to land quality-floor/prompt-polish changes before adding benchmark-only iteration variants (`blind`, `score-only`, `own+reviews`, `full-visibility`).
+Next concrete step: land prompt-polish changes before adding benchmark-only iteration variants (`blind`, `score-only`, `own+reviews`, `full-visibility`).
 
 ## References
 

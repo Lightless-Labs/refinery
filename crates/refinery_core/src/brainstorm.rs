@@ -18,6 +18,9 @@ pub struct BrainstormConfig {
     pub panel_size: usize,
     pub max_concurrent: usize,
     pub timeout: Duration,
+    /// Prefer panel candidates at or above this mean score before backfilling
+    /// by raw controversy. `None` keeps raw controversy selection.
+    pub quality_floor: Option<f64>,
     /// If set, artifacts are saved per-round as each round completes.
     pub output_dir: Option<std::path::PathBuf>,
 }
@@ -67,6 +70,7 @@ impl BrainstormEvaluationStatus {
 #[derive(Debug)]
 pub struct BrainstormResult {
     pub panel: Vec<PanelCandidate>,
+    pub selection_strategy: String,
     pub total_calls: u32,
     pub rounds_completed: u32,
     pub rounds: Vec<BrainstormRound>,
@@ -109,6 +113,20 @@ impl std::error::Error for BrainstormError {}
 
 fn join_error_model_id() -> ModelId {
     ModelId::from_parts("unknown", "join-error")
+}
+
+fn normalized_quality_floor(quality_floor: Option<f64>) -> Option<f64> {
+    quality_floor.filter(|floor| floor.is_finite() && *floor > 0.0)
+}
+
+fn selection_strategy_name(quality_floor: Option<f64>) -> String {
+    match normalized_quality_floor(quality_floor) {
+        Some(floor) if (floor - floor.round()).abs() < f64::EPSILON => {
+            format!("controversy_floor_{floor:.0}")
+        }
+        Some(floor) => format!("controversy_floor_{floor}"),
+        None => "controversy".to_string(),
+    }
 }
 
 /// Run the brainstorm loop: score-only iteration + controversial panel selection.
@@ -475,7 +493,14 @@ pub async fn run(
         })
         .collect();
 
-    let panel = scoring::select_panel(&mut candidates, config.panel_size);
+    let quality_floor = normalized_quality_floor(config.quality_floor);
+    let selection_strategy = selection_strategy_name(quality_floor);
+    let panel = match quality_floor {
+        Some(floor) => {
+            scoring::select_panel_with_quality_floor(&mut candidates, config.panel_size, floor)
+        }
+        None => scoring::select_panel(&mut candidates, config.panel_size),
+    };
 
     let evaluation_status = if latest_answers.len() < 2 {
         if providers.len() == 1 && provider_failures.is_empty() {
@@ -514,6 +539,7 @@ pub async fn run(
 
     Ok(BrainstormResult {
         panel,
+        selection_strategy,
         total_calls,
         rounds_completed: config.max_rounds,
         rounds: round_data,
@@ -621,6 +647,7 @@ mod tests {
             panel_size,
             max_concurrent: 0,
             timeout: Duration::from_secs(120),
+            quality_floor: None,
             output_dir: None,
         }
     }

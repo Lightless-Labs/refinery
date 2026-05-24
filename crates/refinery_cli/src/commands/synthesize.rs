@@ -109,6 +109,7 @@ pub async fn run(args: SynthesizeArgs) -> ExitCode {
                 synthesis_calls: Some(synthesis_calls),
                 total_calls,
                 panel_size: None,
+                selection_strategy: None,
                 warning: None,
             });
         }

@@ -96,6 +96,7 @@ pub async fn run(args: ConvergeArgs) -> ExitCode {
                 synthesis_calls: None,
                 total_calls: estimate.total_calls,
                 panel_size: None,
+                selection_strategy: None,
                 warning,
             });
         }
