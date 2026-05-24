@@ -36,6 +36,16 @@ Models propose, evaluate each other, and repeat until consensus.
 
 ## CLI Usage
 
+### Verbs
+
+Refinery's CLI verbs use different multi-model orchestration strategies:
+
+- `converge` finds one answer models broadly agree on.
+- `synthesize` merges the best qualifying answers into one synthesis.
+- `brainstorm` returns a diverse panel using score-only iteration and controversial selection.
+
+See [`docs/verbs/README.md`](docs/verbs/README.md) for verb architecture, when to use each verb, and brainstorm benchmark results.
+
 ### Models
 
 Pass models as a comma-separated list using `provider/model` format
