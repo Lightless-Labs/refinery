@@ -8,6 +8,10 @@ todo: 013-brainstorm-strategy-benchmarks
 
 # Brainstorm Strategy Benchmarks Plan
 
+**Enhanced:** 2026-05-23 (via `/deepen-plan`)
+**Reviewed:** 2026-05-23 (via `/coderabbit / review`)
+**Completed:** TBD
+
 ## Context
 
 A valid v0 brainstorm baseline now exists in `docs/brainstorms/2026-05-23-brainstorm-smoke-baseline.md` using Codex, GLM, Kimi, and MiniMax. That unblocks `todos/013`: define and run benchmarks for iteration, upstream divergence, and selection strategies.

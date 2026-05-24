@@ -9,6 +9,8 @@ todo: 016-silent-json-serialization-failure
 
 # JSON Serialization Failure Handling Plan
 
+**Enhanced:** 2026-05-22 (via `/deepen-plan`)
+**Reviewed:** 2026-05-23 (via `/coderabbit / review`)
 **Completed:** 2026-05-22
 
 ## Problem

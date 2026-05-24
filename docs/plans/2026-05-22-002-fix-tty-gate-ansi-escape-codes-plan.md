@@ -9,6 +9,10 @@ todo: 010-tty-gate-ansi-escape-codes
 
 # TTY-Gate ANSI Escape Codes Plan
 
+**Enhanced:** 2026-05-22 (via `/deepen-plan`)
+**Reviewed:** 2026-05-23 (via `/coderabbit / review`)
+**Completed:** 2026-05-22
+
 ## Problem
 
 Some CLI progress/status output embeds ANSI color escape codes directly. `ProgressDisplay` already avoids rendering when stderr is not a TTY, but `synthesize` has direct `eprintln!` progress lines that can emit raw color codes into piped logs, JSON stderr, or CI output.

@@ -153,15 +153,20 @@ fn analyze_run(run_dir: &Path, panel_size: usize) -> Result<RunBenchmarkOutput, 
 
 fn find_final_round(run_dir: &Path) -> Result<u32, String> {
     let entries = std::fs::read_dir(run_dir).map_err(|e| e.to_string())?;
-    entries
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            name.strip_prefix("round-")?.parse::<u32>().ok()
-        })
-        .max()
-        .ok_or_else(|| "no round-* directories found".to_string())
+    let mut max_round = None;
+    for entry in entries {
+        let entry =
+            entry.map_err(|e| format!("failed to read {} entry: {e}", run_dir.display()))?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if let Some(round) = name
+            .strip_prefix("round-")
+            .and_then(|suffix| suffix.parse::<u32>().ok())
+        {
+            max_round = Some(max_round.map_or(round, |current: u32| current.max(round)));
+        }
+    }
+    max_round.ok_or_else(|| "no round-* directories found".to_string())
 }
 
 fn load_candidates(round_dir: &Path) -> Result<Vec<Candidate>, String> {
@@ -174,8 +179,11 @@ fn load_candidates(round_dir: &Path) -> Result<Vec<Candidate>, String> {
         if !name.starts_with("evaluate-") || !name.ends_with(".json") {
             continue;
         }
-        let content = std::fs::read_to_string(entry.path()).map_err(|e| e.to_string())?;
-        let eval: EvalArtifact = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+        let eval: EvalArtifact = serde_json::from_str(&content)
+            .map_err(|e| format!("failed to parse {}: {e}", path.display()))?;
         scores
             .entry(ModelId::new(&eval.evaluatee))
             .or_default()
