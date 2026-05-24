@@ -44,7 +44,7 @@ Refinery's CLI verbs use different multi-model orchestration strategies:
 - `synthesize` merges the best qualifying answers into one synthesis.
 - `brainstorm` returns a diverse panel using score-only iteration and controversial selection.
 
-See [`docs/verbs/README.md`](docs/verbs/README.md) for verb architecture, when to use each verb, and brainstorm benchmark results.
+See [`crates/refinery_cli/src/commands/README.md`](crates/refinery_cli/src/commands/README.md) for verb architecture, when to use each verb, and brainstorm benchmark results.
 
 ### Models
 
