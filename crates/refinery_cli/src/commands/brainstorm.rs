@@ -26,6 +26,10 @@ pub struct BrainstormArgs {
     /// Number of diverse answers to return [default: 3]
     #[arg(long, default_value = "3", value_parser = clap::value_parser!(u32).range(1..=20))]
     panel_size: u32,
+
+    /// Minimum mean score preferred during panel selection; 0 disables the floor [default: 7.0]
+    #[arg(long, default_value = "7.0")]
+    quality_floor: f64,
 }
 
 // ── JSON output types ───────────────────────────────────────────────────
@@ -35,6 +39,7 @@ struct BrainstormJsonOutput {
     status: String,
     degraded: bool,
     evaluation_status: String,
+    selection_strategy: String,
     panel: Vec<PanelAnswerOutput>,
     provider_failures: Vec<ProviderFailureOutput>,
     metadata: MetadataOutput,
@@ -82,11 +87,42 @@ struct BrainstormErrorMetadata {
     models_dropped: Vec<String>,
 }
 
+fn quality_floor_config(quality_floor: f64) -> Result<Option<f64>, String> {
+    if !quality_floor.is_finite() || !(0.0..=10.0).contains(&quality_floor) {
+        return Err("--quality-floor must be a finite number between 0 and 10".to_string());
+    }
+
+    if quality_floor <= 0.0 {
+        Ok(None)
+    } else {
+        Ok(Some(quality_floor))
+    }
+}
+
+fn selection_strategy_name(quality_floor: Option<f64>) -> String {
+    match quality_floor {
+        Some(floor) if (floor - floor.round()).abs() < f64::EPSILON => {
+            format!("controversy_floor_{floor:.0}")
+        }
+        Some(floor) => format!("controversy_floor_{floor}"),
+        None => "controversy".to_string(),
+    }
+}
+
 // ── Main entry point ────────────────────────────────────────────────────
 
 pub async fn run(args: BrainstormArgs) -> ExitCode {
     let shared = &args.shared;
     init_tracing(shared);
+
+    let quality_floor = match quality_floor_config(args.quality_floor) {
+        Ok(floor) => floor,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return ExitCode::from(4);
+        }
+    };
+    let selection_strategy = selection_strategy_name(quality_floor);
 
     // Dry run: estimate calls without resolving prompt or building providers
     if shared.dry_run {
@@ -122,6 +158,7 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
                 synthesis_calls: None,
                 total_calls: total,
                 panel_size: Some(args.panel_size),
+                selection_strategy: Some(selection_strategy),
                 warning: None,
             });
         }
@@ -131,6 +168,7 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
         println!("  Calls per round: {calls_per_round}");
         println!("  Total calls (max): {total}");
         println!("  Panel size: {}", args.panel_size);
+        println!("  Selection strategy: {selection_strategy}");
         return ExitCode::SUCCESS;
     }
 
@@ -157,6 +195,7 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
         panel_size: args.panel_size as usize,
         max_concurrent: shared.max_concurrent,
         timeout: Duration::from_secs(shared.timeout),
+        quality_floor,
         output_dir,
     };
 
@@ -200,6 +239,7 @@ fn emit_json_success(result: &BrainstormResult, elapsed: std::time::Duration) ->
         },
         degraded: result.degraded,
         evaluation_status: result.evaluation_status.as_str().to_string(),
+        selection_strategy: result.selection_strategy.clone(),
         panel: result
             .panel
             .iter()
@@ -258,6 +298,7 @@ fn emit_text_success(result: &BrainstormResult, elapsed: std::time::Duration) {
     println!("Rounds: {}", result.rounds_completed);
     println!("Total calls: {}", result.total_calls);
     println!("Evaluation status: {}", result.evaluation_status.as_str());
+    println!("Selection strategy: {}", result.selection_strategy);
     println!("Elapsed: {elapsed:?}");
     if !result.provider_failures.is_empty() {
         println!("\n── Provider failures ──");

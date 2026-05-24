@@ -4,9 +4,16 @@ priority: medium
 milestone: v0.4
 created: 2026-05-23
 depends_on: 013-brainstorm-strategy-benchmarks
+status: completed
+updated: 2026-05-24
+completed: 2026-05-24
 ---
 
 # Add Quality Floor to Brainstorm Selection
+
+**Plan:** `docs/plans/2026-05-24-001-feat-brainstorm-quality-floor-selection-plan.md`
+
+**Completed:** 2026-05-24
 
 ## Problem
 

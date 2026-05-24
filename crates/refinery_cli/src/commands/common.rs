@@ -130,6 +130,8 @@ pub struct DryRunOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub panel_size: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub selection_strategy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
 }
 

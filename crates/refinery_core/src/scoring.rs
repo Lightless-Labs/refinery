@@ -47,12 +47,7 @@ pub struct PanelCandidate {
     pub per_evaluator_scores: Vec<(ModelId, f64)>,
 }
 
-/// Select the top `panel_size` candidates by controversy score (descending),
-/// with mean score as a tiebreaker (also descending).
-///
-/// Returns all candidates if `panel_size >= candidates.len()`.
-#[must_use]
-pub fn select_panel(candidates: &mut [PanelCandidate], panel_size: usize) -> Vec<PanelCandidate> {
+fn sort_by_controversy(candidates: &mut [PanelCandidate]) {
     // Sort descending by (controversy_score, mean_score) — NaN-safe via total_cmp.
     candidates.sort_by(|a, b| {
         b.controversy_score
@@ -60,7 +55,51 @@ pub fn select_panel(candidates: &mut [PanelCandidate], panel_size: usize) -> Vec
             .then_with(|| b.mean_score.total_cmp(&a.mean_score))
             .then_with(|| a.model_id.to_string().cmp(&b.model_id.to_string()))
     });
+}
+
+/// Select the top `panel_size` candidates by controversy score (descending),
+/// with mean score as a tiebreaker (also descending).
+///
+/// Returns all candidates if `panel_size >= candidates.len()`.
+#[must_use]
+pub fn select_panel(candidates: &mut [PanelCandidate], panel_size: usize) -> Vec<PanelCandidate> {
+    sort_by_controversy(candidates);
     candidates.iter().take(panel_size).cloned().collect()
+}
+
+/// Select the top `panel_size` candidates by controversy, preferring candidates
+/// whose mean score is at or above `quality_floor`.
+///
+/// Qualifying candidates are ranked by the same controversy ordering as
+/// [`select_panel`]. If fewer than `panel_size` candidates qualify, remaining
+/// slots are backfilled from below-floor candidates by the same controversy
+/// ordering so a panel is still returned when possible.
+#[must_use]
+pub fn select_panel_with_quality_floor(
+    candidates: &mut [PanelCandidate],
+    panel_size: usize,
+    quality_floor: f64,
+) -> Vec<PanelCandidate> {
+    sort_by_controversy(candidates);
+
+    let mut selected: Vec<PanelCandidate> = candidates
+        .iter()
+        .filter(|candidate| candidate.mean_score >= quality_floor)
+        .take(panel_size)
+        .cloned()
+        .collect();
+
+    if selected.len() < panel_size {
+        selected.extend(
+            candidates
+                .iter()
+                .filter(|candidate| candidate.mean_score < quality_floor)
+                .take(panel_size - selected.len())
+                .cloned(),
+        );
+    }
+
+    selected
 }
 
 #[cfg(test)]
@@ -162,6 +201,78 @@ mod tests {
         assert_eq!(panel.len(), 2);
         assert_eq!(panel[0].model_id, ModelId::new("test/high_mean"));
         assert_eq!(panel[1].model_id, ModelId::new("test/mid_mean"));
+    }
+
+    #[test]
+    fn select_panel_quality_floor_excludes_low_quality_when_possible() {
+        let mut candidates = vec![
+            PanelCandidate {
+                model_id: ModelId::new("test/divisive_low_quality"),
+                answer: "divisive low quality".into(),
+                mean_score: 5.67,
+                stddev: 1.25,
+                controversy_score: 7.09,
+                per_evaluator_scores: vec![],
+            },
+            PanelCandidate {
+                model_id: ModelId::new("test/strong_controversial"),
+                answer: "strong controversial".into(),
+                mean_score: 7.33,
+                stddev: 0.94,
+                controversy_score: 6.89,
+                per_evaluator_scores: vec![],
+            },
+            PanelCandidate {
+                model_id: ModelId::new("test/solid"),
+                answer: "solid".into(),
+                mean_score: 8.0,
+                stddev: 0.25,
+                controversy_score: 2.0,
+                per_evaluator_scores: vec![],
+            },
+        ];
+
+        let panel = select_panel_with_quality_floor(&mut candidates, 2, 7.0);
+
+        assert_eq!(panel.len(), 2);
+        assert_eq!(panel[0].model_id, ModelId::new("test/strong_controversial"));
+        assert_eq!(panel[1].model_id, ModelId::new("test/solid"));
+    }
+
+    #[test]
+    fn select_panel_quality_floor_backfills_when_needed() {
+        let mut candidates = vec![
+            PanelCandidate {
+                model_id: ModelId::new("test/divisive_low_quality"),
+                answer: "divisive low quality".into(),
+                mean_score: 5.67,
+                stddev: 1.25,
+                controversy_score: 7.09,
+                per_evaluator_scores: vec![],
+            },
+            PanelCandidate {
+                model_id: ModelId::new("test/only_qualifier"),
+                answer: "only qualifier".into(),
+                mean_score: 7.33,
+                stddev: 0.94,
+                controversy_score: 6.89,
+                per_evaluator_scores: vec![],
+            },
+            PanelCandidate {
+                model_id: ModelId::new("test/below_floor"),
+                answer: "below floor".into(),
+                mean_score: 6.5,
+                stddev: 0.25,
+                controversy_score: 1.63,
+                per_evaluator_scores: vec![],
+            },
+        ];
+
+        let panel = select_panel_with_quality_floor(&mut candidates, 2, 7.0);
+
+        assert_eq!(panel.len(), 2);
+        assert_eq!(panel[0].model_id, ModelId::new("test/only_qualifier"));
+        assert_eq!(panel[1].model_id, ModelId::new("test/divisive_low_quality"));
     }
 
     #[test]
