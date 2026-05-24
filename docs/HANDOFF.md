@@ -2,7 +2,7 @@
 
 Current state of the project and active work. Read this at session start. Update before compaction or at natural breakpoints.
 
-**Last updated:** 2026-05-22
+**Last updated:** 2026-05-23
 
 ## Project State
 

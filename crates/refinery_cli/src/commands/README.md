@@ -93,7 +93,7 @@ This favors answers that are both reasonably strong and divisive among evaluator
 
 A six-prompt v0 benchmark was run with Codex, GLM, Kimi, and MiniMax. Each successful run used 4 models, 2 rounds, and 32 calls. The prompts covered product strategy, technical design, architecture, debugging/process, research/science, and governance.
 
-Full report: [`docs/brainstorms/2026-05-23-six-prompt-brainstorm-benchmark.md`](../brainstorms/2026-05-23-six-prompt-brainstorm-benchmark.md)
+Full report: [`docs/brainstorms/2026-05-23-six-prompt-brainstorm-benchmark.md`](/docs/brainstorms/2026-05-23-six-prompt-brainstorm-benchmark.md)
 
 Aggregate selector results:
 
