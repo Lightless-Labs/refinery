@@ -1,0 +1,41 @@
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+steps:
+  - label: ":rust: Linux ARM64 Rust CI"
+    key: rust-linux-arm64
+    agents:
+      queue: "ci-linux-arm64"
+    plugins:
+      - github.com/Bande-a-Bonnot/tart-ci#v0.1.1:
+          image: "ghcr.io/cirruslabs/ubuntu:latest"
+          os: "linux"
+          always_pull: false
+          headless: true
+    command: |
+      set -euo pipefail
+
+      export DEBIAN_FRONTEND=noninteractive
+      sudo apt-get update
+      sudo apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        build-essential \
+        pkg-config \
+        libssl-dev
+
+      if ! command -v cargo >/dev/null 2>&1; then
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+        . "$HOME/.cargo/env"
+      fi
+
+      rustup component add clippy rustfmt
+      rustc --version
+      cargo --version
+
+      cargo fmt --all -- --check
+      cargo check --workspace
+      cargo clippy --workspace -- -D warnings
+      cargo test --workspace
+      cargo build --workspace --release
