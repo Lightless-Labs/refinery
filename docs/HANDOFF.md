@@ -2,7 +2,7 @@
 
 Current state of the project and active work. Read this at session start. Update before compaction or at natural breakpoints.
 
-**Last updated:** 2026-05-23
+**Last updated:** 2026-05-25
 
 ## Project State
 
@@ -59,6 +59,7 @@ Triage pattern: fix P1/P2 with code, create TODOs for P3/nitpicks, reply to ever
 
 ## Recent Context
 
+- 2026-05-25 Buildkite migration started: cloned local checkout at `/Users/elfitz/Projects/lightless-labs/refinery`, created branch `chore/buildkite-linux-arm64-ci`, added `.buildkite/pipeline.yml` using `github.com/Bande-a-Bonnot/tart-ci#v0.1.1` on queue `ci-linux-arm64`, and opened PR #35 (`ci: add Buildkite Linux ARM64 pipeline`). Buildkite pipeline `la-bande-a-bonnot/refinery` was created and build #6 passed on the persistent `big-cabbage` Tart runner. Earlier builds #1-#5 exposed Buildkite shell interpolation and Rust home-dir issues; fixed by normalizing `HOME`, forcing `CARGO_HOME`/`RUSTUP_HOME`, and escaping shell variables as `$$` in Buildkite YAML.
 - PR #28 / `feat/brainstorm-verb` merged the brainstorm verb: core loop in `refinery_core::brainstorm::run()`, scoring in `refinery_core::scoring`, prompts in `prompts/brainstorm.rs`, CLI in `commands/brainstorm.rs`.
 - PR #29 merged post-merge documentation cleanup: brainstorm TODO 004 completed, wording TODOs 014/015 completed, handoff updated.
 - 2026-05-21 brainstorm smoke test field report completed (`todos/019`, `docs/brainstorms/2026-05-21-brainstorm-smoke-test-field-report.md`). Result: not a valid multi-model baseline because only `codex-cli/gpt-5.4` produced usable responses; Claude failed with 403/no access and Gemini hit capacity/quota. Created `todos/020-brainstorm-provider-failure-observability.md` because partial provider failures can look like successful single-provider brainstorms with zero/no eval scores.
@@ -81,7 +82,8 @@ Triage pattern: fix P1/P2 with code, create TODOs for P3/nitpicks, reply to ever
 
 Recommended order:
 
-1. Start from clean `main` and read this handoff plus the valid baseline in `docs/brainstorms/2026-05-23-brainstorm-smoke-baseline.md`.
-2. If continuing brainstorm quality work, consider `todos/023` (quality floor) and `todos/024` (meta-preamble prompt polish) before adding L2 iteration variants.
-3. Consider addressing `todos/022` before running more OpenCode-heavy multi-model panels; for now use `--max-concurrent 1` with multiple OpenCode-backed models and `--idle-timeout 480` for long prompts.
-4. Do not implement Open Collider-style domain collisions before benchmark budget constraints are explicit.
+1. If continuing Buildkite migration, review PR #35 and Buildkite build #6, then decide whether to merge the Linux ARM64 pipeline and/or replace the bootstrap installs with a baked CI image.
+2. Start from clean `main` and read this handoff plus the valid baseline in `docs/brainstorms/2026-05-23-brainstorm-smoke-baseline.md`.
+3. If continuing brainstorm quality work, consider `todos/023` (quality floor) and `todos/024` (meta-preamble prompt polish) before adding L2 iteration variants.
+4. Consider addressing `todos/022` before running more OpenCode-heavy multi-model panels; for now use `--max-concurrent 1` with multiple OpenCode-backed models and `--idle-timeout 480` for long prompts.
+5. Do not implement Open Collider-style domain collisions before benchmark budget constraints are explicit.
