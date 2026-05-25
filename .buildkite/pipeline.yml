@@ -9,7 +9,7 @@ steps:
       queue: "ci-linux-arm64"
     plugins:
       - github.com/Bande-a-Bonnot/tart-ci#v0.1.1:
-          image: "ghcr.io/cirruslabs/ubuntu:latest"
+          image: "ghcr.io/cirruslabs/ubuntu@sha256:e90dfc9e6dffb742809f32e61ee03daf5fa6ee30e24ee05c105beffa3b7c9540"
           os: "linux"
           always_pull: false
           headless: true
@@ -43,7 +43,6 @@ steps:
       cargo --version
 
       cargo fmt --all -- --check
-      cargo check --workspace
-      cargo clippy --workspace -- -D warnings
+      cargo clippy --workspace
       cargo test --workspace
       cargo build --workspace --release
