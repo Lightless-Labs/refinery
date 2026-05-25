@@ -20,8 +20,8 @@ steps:
       if [[ -z "${HOME:-}" || "$HOME" == "/" ]]; then
         export HOME=/home/admin
       fi
-      export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
-      export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+      export CARGO_HOME="$HOME/.cargo"
+      export RUSTUP_HOME="$HOME/.rustup"
       export PATH="$CARGO_HOME/bin:$PATH"
 
       sudo apt-get update
