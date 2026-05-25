@@ -4,9 +4,18 @@ priority: medium
 milestone: v0.4
 created: 2026-05-23
 depends_on: 013-brainstorm-strategy-benchmarks
+status: completed
+updated: 2026-05-25
+completed: 2026-05-25
 ---
 
 # Suppress Brainstorm Score-History Meta-Preambles
+
+**Plan:** `docs/plans/2026-05-25-001-fix-brainstorm-score-history-meta-preambles-plan.md`
+
+**Completed:** 2026-05-25
+
+**Validation:** `docs/brainstorms/2026-05-25-brainstorm-meta-preamble-prompt-polish.md`
 
 ## Problem
 

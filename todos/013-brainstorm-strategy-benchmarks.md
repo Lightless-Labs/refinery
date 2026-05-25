@@ -4,7 +4,7 @@ priority: low
 milestone: v0.4
 depends_on: 004-verb-brainstorm
 status: in_progress
-updated: 2026-05-23
+updated: 2026-05-25
 ---
 
 # Benchmark: Brainstorm Iteration and Selection Strategies
@@ -76,9 +76,24 @@ The artifact analyzer is now implemented as `refinery benchmark-brainstorm` and 
 Key benchmark result: raw controversy improves lexical diversity but can select low-quality high-disagreement answers. `controversy_floor_7` improved the quality floor while preserving some diversity benefit. Follow-ups created:
 
 - `todos/023-brainstorm-quality-floor-selection.md` (completed 2026-05-24)
-- `todos/024-brainstorm-suppress-score-history-meta-preambles.md`
+- `todos/024-brainstorm-suppress-score-history-meta-preambles.md` (completed 2026-05-25)
 
-Next concrete step: land prompt-polish changes before adding benchmark-only iteration variants (`blind`, `score-only`, `own+reviews`, `full-visibility`).
+## Remaining Work
+
+Immediate quality follow-ups are now complete:
+
+- `todos/023-brainstorm-quality-floor-selection.md` added/configured production quality-floor selection.
+- `todos/024-brainstorm-suppress-score-history-meta-preambles.md` reduced measured score-history meta-preambles to `0.0` on two validation prompts.
+
+Next concrete step: add benchmark-only iteration variants (`blind`, `score-only`, `own+reviews`, `full-visibility`) after deciding the minimal config/API surface.
+
+Suggested next slice:
+
+1. Add an internal/experimental brainstorm iteration enum rather than new public UX first.
+2. Keep default production behavior as score-only.
+3. Add artifact metadata naming the iteration strategy so analyzer outputs can group runs.
+4. Run the fixed six-prompt suite for each variant, serializing OpenCode-backed calls with `--max-concurrent 1` until `todos/022` is fixed.
+5. Compare selectors (`mean`, `controversy`, `controversy_floor_7`, `quality_x_lexdiv`) and whole-panel metrics before promoting any variant.
 
 ## References
 

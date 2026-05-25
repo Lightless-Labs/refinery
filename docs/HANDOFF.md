@@ -44,8 +44,7 @@ See `memory/verb_architecture.md` for full taxonomy with consistent terminology.
 
 Check `todos/` for the full list. Key ones:
 
-- **013** — brainstorm strategy benchmarks (in progress): design, analyzer, and six-prompt v0 suite completed; next decide on quality-floor/prompt-polish follow-ups before benchmark-only iteration variants
-- **024** — suppress brainstorm score-history meta-preambles in final answers
+- **013** — brainstorm strategy benchmarks (in progress): design, analyzer, six-prompt v0 suite, quality-floor follow-up, and meta-preamble prompt polish completed; next add benchmark-only iteration variants
 - **018** — brainstorm divergence expansion: each model reframes the initial prompt, all models work all prompt variants; optional future domain collisions
 - **021** — evaluate TOON (`toon-format/toon`) for prompt-facing artifact export / benchmark fixtures
 - **011** — evolve verb (designed, not started)
@@ -58,6 +57,7 @@ Triage pattern: fix P1/P2 with code, create TODOs for P3/nitpicks, reply to ever
 
 ## Recent Context
 
+- 2026-05-25 brainstorm score-history meta-preamble prompt polish completed (`todos/024`, `docs/plans/2026-05-25-001-fix-brainstorm-score-history-meta-preambles-plan.md`, `docs/brainstorms/2026-05-25-brainstorm-meta-preamble-prompt-polish.md`): `brainstorm_system_prompt()` and `propose_with_score_history_prompt()` now tell models to use scores internally and return standalone user-facing answers without mentioning scores, prior rounds, feedback, benchmarks, or selection mechanics. Added prompt tests verifying the instruction and that score history is still present. Reran product and technical benchmark prompts with Codex + GLM + Kimi + MiniMax; both completed non-degraded and analyzer reported `meta_preamble_rate: 0.0` for all selectors, improved from the prior 0.333 baseline. Verified with `cargo fmt --all -- --check`, `cargo test -p refinery_core prompts`, and `cargo clippy -p refinery_core --all-targets -- -D warnings`.
 - 2026-05-25 Buildkite migration started: cloned local checkout at `/Users/elfitz/Projects/lightless-labs/refinery`, created branch `chore/buildkite-linux-arm64-ci`, added `.buildkite/pipeline.yml` using `github.com/Bande-a-Bonnot/tart-ci#v0.1.1` on queue `ci-linux-arm64`, and opened PR #35 (`ci: add Buildkite Linux ARM64 pipeline`). Buildkite pipeline `la-bande-a-bonnot/refinery` was created. Build #6 passed on the persistent `big-cabbage` Tart runner after builds #1-#5 exposed Buildkite shell interpolation and Rust home-dir issues; fixed by normalizing `HOME`, forcing `CARGO_HOME`/`RUSTUP_HOME`, and escaping shell variables as `$$` in Buildkite YAML. Review feedback then flagged non-deterministic `ubuntu:latest` and redundant Cargo commands; fixed by pinning the Tart Ubuntu image to digest `sha256:e90dfc9e6dffb742809f32e61ee03daf5fa6ee30e24ee05c105beffa3b7c9540` and dropping `cargo check` / duplicate clippy `-D warnings`. Build #7 passed with those review fixes.
 - PR #28 / `feat/brainstorm-verb` merged the brainstorm verb: core loop in `refinery_core::brainstorm::run()`, scoring in `refinery_core::scoring`, prompts in `prompts/brainstorm.rs`, CLI in `commands/brainstorm.rs`.
 - PR #29 merged post-merge documentation cleanup: brainstorm TODO 004 completed, wording TODOs 014/015 completed, handoff updated.
@@ -84,6 +84,6 @@ Recommended order:
 
 1. If continuing Buildkite migration, review PR #35 and Buildkite build #7, then decide whether to merge the Linux ARM64 pipeline and/or replace the bootstrap installs with a baked CI image.
 2. Start from clean `main` and read this handoff plus the valid baseline in `docs/brainstorms/2026-05-23-brainstorm-smoke-baseline.md`.
-3. If continuing brainstorm quality work, consider `todos/024` (meta-preamble prompt polish) before adding L2 iteration variants.
+3. If continuing brainstorm strategy work, start `todos/013` L2 benchmark-only iteration variants (`blind`, `score-only`, `own+reviews`, `full-visibility`) after deciding the minimal config/API surface.
 4. Consider addressing `todos/022` before running more OpenCode-heavy multi-model panels; for now use `--max-concurrent 1` with multiple OpenCode-backed models and `--idle-timeout 480` for long prompts.
 5. Do not implement Open Collider-style domain collisions before benchmark budget constraints are explicit.
