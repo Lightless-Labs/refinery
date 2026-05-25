@@ -33,7 +33,7 @@ steps:
         libssl-dev
 
       if ! command -v cargo >/dev/null 2>&1; then
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs           | HOME="$HOME" CARGO_HOME="$CARGO_HOME" RUSTUP_HOME="$RUSTUP_HOME" sh -s -- -y --profile minimal --no-modify-path
         . "$CARGO_HOME/env"
       fi
 
