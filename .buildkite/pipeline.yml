@@ -17,12 +17,12 @@ steps:
       set -euo pipefail
 
       export DEBIAN_FRONTEND=noninteractive
-      if [[ -z "${HOME:-}" || "$HOME" == "/" ]]; then
+      if [[ -z "$${HOME:-}" || "$$HOME" == "/" ]]; then
         export HOME=/home/admin
       fi
-      export CARGO_HOME="$HOME/.cargo"
-      export RUSTUP_HOME="$HOME/.rustup"
-      export PATH="$CARGO_HOME/bin:$PATH"
+      export CARGO_HOME="$$HOME/.cargo"
+      export RUSTUP_HOME="$$HOME/.rustup"
+      export PATH="$$CARGO_HOME/bin:$$PATH"
 
       sudo apt-get update
       sudo apt-get install -y --no-install-recommends \
@@ -33,8 +33,9 @@ steps:
         libssl-dev
 
       if ! command -v cargo >/dev/null 2>&1; then
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs           | HOME="$HOME" CARGO_HOME="$CARGO_HOME" RUSTUP_HOME="$RUSTUP_HOME" sh -s -- -y --profile minimal --no-modify-path
-        . "$CARGO_HOME/env"
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+          | HOME="$$HOME" CARGO_HOME="$$CARGO_HOME" RUSTUP_HOME="$$RUSTUP_HOME" sh -s -- -y --profile minimal --no-modify-path
+        . "$$CARGO_HOME/env"
       fi
 
       rustup component add clippy rustfmt
