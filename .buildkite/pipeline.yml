@@ -17,6 +17,11 @@ steps:
       set -euo pipefail
 
       export DEBIAN_FRONTEND=noninteractive
+      export HOME="${HOME:-/home/admin}"
+      export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+      export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+      export PATH="$CARGO_HOME/bin:$PATH"
+
       sudo apt-get update
       sudo apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -27,7 +32,7 @@ steps:
 
       if ! command -v cargo >/dev/null 2>&1; then
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-        . "$HOME/.cargo/env"
+        . "$CARGO_HOME/env"
       fi
 
       rustup component add clippy rustfmt
