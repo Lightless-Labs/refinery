@@ -22,7 +22,7 @@ steps:
       fi
       export CARGO_HOME="$${CARGO_HOME:-$$HOME/.cargo}"
       export RUSTUP_HOME="$${RUSTUP_HOME:-/opt/rustup}"
-      export PATH="/usr/local/bin:$$CARGO_HOME/bin:$$PATH"
+      export PATH="/usr/local/bin:/opt/cargo/bin:$$CARGO_HOME/bin:$$PATH"
 
       rustc --version
       cargo --version
