@@ -97,7 +97,9 @@ pub fn select_panel_with_quality_floor(
         selected.extend(
             candidates
                 .iter()
-                .filter(|candidate| candidate.mean_score < quality_floor)
+                .filter(|candidate| {
+                    candidate.mean_score.is_nan() || candidate.mean_score < quality_floor
+                })
                 .take(panel_size - selected.len())
                 .cloned(),
         );
@@ -268,6 +270,34 @@ mod tests {
 
         assert_eq!(panel.len(), 1);
         assert_eq!(panel[0].model_id, ModelId::new("test/high_controversy"));
+    }
+
+    #[test]
+    fn select_panel_quality_floor_backfills_nan_mean_when_needed() {
+        let mut candidates = vec![
+            PanelCandidate {
+                model_id: ModelId::new("test/only_qualifier"),
+                answer: "only qualifier".into(),
+                mean_score: 7.33,
+                stddev: 0.94,
+                controversy_score: 6.89,
+                per_evaluator_scores: vec![],
+            },
+            PanelCandidate {
+                model_id: ModelId::new("test/nan_mean"),
+                answer: "nan mean".into(),
+                mean_score: f64::NAN,
+                stddev: 1.25,
+                controversy_score: 7.09,
+                per_evaluator_scores: vec![],
+            },
+        ];
+
+        let panel = select_panel_with_quality_floor(&mut candidates, 2, 7.0);
+
+        assert_eq!(panel.len(), 2);
+        assert_eq!(panel[0].model_id, ModelId::new("test/only_qualifier"));
+        assert_eq!(panel[1].model_id, ModelId::new("test/nan_mean"));
     }
 
     #[test]

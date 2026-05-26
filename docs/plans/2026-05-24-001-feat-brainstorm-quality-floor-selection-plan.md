@@ -8,6 +8,8 @@ completed: 2026-05-24
 
 # Plan: Brainstorm Quality-Floor Selection
 
+**Reviewed:** 2026-05-26 (via `/codex-review / local-pi`)
+
 **Completed:** 2026-05-24
 
 ## Context
