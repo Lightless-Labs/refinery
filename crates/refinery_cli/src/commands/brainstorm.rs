@@ -5,7 +5,8 @@ use clap::Parser;
 use serde::Serialize;
 
 use refinery_core::brainstorm::{
-    BrainstormConfig, BrainstormError, BrainstormProviderFailure, BrainstormResult,
+    BrainstormConfig, BrainstormError, BrainstormIterationStrategy, BrainstormProviderFailure,
+    BrainstormResult,
 };
 use refinery_core::types::ModelId;
 
@@ -30,6 +31,10 @@ pub struct BrainstormArgs {
     /// Minimum mean score preferred during panel selection; 0 disables the floor [default: 7.0]
     #[arg(long, default_value = "7.0")]
     quality_floor: f64,
+
+    /// Experimental brainstorm iteration strategy for benchmark runs.
+    #[arg(long, default_value = "score-only", hide = true)]
+    iteration_strategy: BrainstormIterationStrategy,
 }
 
 // ── JSON output types ───────────────────────────────────────────────────
@@ -40,6 +45,7 @@ struct BrainstormJsonOutput {
     degraded: bool,
     evaluation_status: String,
     selection_strategy: String,
+    iteration_strategy: String,
     panel: Vec<PanelAnswerOutput>,
     provider_failures: Vec<ProviderFailureOutput>,
     metadata: MetadataOutput,
@@ -159,6 +165,7 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
                 total_calls: total,
                 panel_size: Some(args.panel_size),
                 selection_strategy: Some(selection_strategy),
+                iteration_strategy: Some(args.iteration_strategy.as_str().to_string()),
                 warning: None,
             });
         }
@@ -169,6 +176,7 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
         println!("  Total calls (max): {total}");
         println!("  Panel size: {}", args.panel_size);
         println!("  Selection strategy: {selection_strategy}");
+        println!("  Iteration strategy: {}", args.iteration_strategy.as_str());
         return ExitCode::SUCCESS;
     }
 
@@ -195,6 +203,7 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
         panel_size: args.panel_size as usize,
         max_concurrent: shared.max_concurrent,
         timeout: Duration::from_secs(shared.timeout),
+        iteration_strategy: args.iteration_strategy,
         quality_floor,
         output_dir,
     };
@@ -240,6 +249,7 @@ fn emit_json_success(result: &BrainstormResult, elapsed: std::time::Duration) ->
         degraded: result.degraded,
         evaluation_status: result.evaluation_status.as_str().to_string(),
         selection_strategy: result.selection_strategy.clone(),
+        iteration_strategy: result.iteration_strategy.as_str().to_string(),
         panel: result
             .panel
             .iter()
@@ -299,6 +309,7 @@ fn emit_text_success(result: &BrainstormResult, elapsed: std::time::Duration) {
     println!("Total calls: {}", result.total_calls);
     println!("Evaluation status: {}", result.evaluation_status.as_str());
     println!("Selection strategy: {}", result.selection_strategy);
+    println!("Iteration strategy: {}", result.iteration_strategy.as_str());
     println!("Elapsed: {elapsed:?}");
     if !result.provider_failures.is_empty() {
         println!("\n── Provider failures ──");

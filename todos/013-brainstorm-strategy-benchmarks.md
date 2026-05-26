@@ -4,7 +4,7 @@ priority: low
 milestone: v0.4
 depends_on: 004-verb-brainstorm
 status: in_progress
-updated: 2026-05-25
+updated: 2026-05-26
 ---
 
 # Benchmark: Brainstorm Iteration and Selection Strategies
@@ -85,15 +85,16 @@ Immediate quality follow-ups are now complete:
 - `todos/023-brainstorm-quality-floor-selection.md` added/configured production quality-floor selection.
 - `todos/024-brainstorm-suppress-score-history-meta-preambles.md` reduced measured score-history meta-preambles to `0.0` on two validation prompts.
 
-Next concrete step: add benchmark-only iteration variants (`blind`, `score-only`, `own+reviews`, `full-visibility`) after deciding the minimal config/API surface.
+Benchmark-only iteration variants are now implemented behind hidden/internal CLI config:
 
-Suggested next slice:
+- `blind` — prompt-only every round.
+- `score-only` — production default, own prior answers plus aggregate scores.
+- `own-reviews` — own prior answers plus received peer scores and rationales.
+- `full-visibility` — all prior answers plus peer scores and rationales.
 
-1. Add an internal/experimental brainstorm iteration enum rather than new public UX first.
-2. Keep default production behavior as score-only.
-3. Add artifact metadata naming the iteration strategy so analyzer outputs can group runs.
-4. Run the fixed six-prompt suite for each variant, serializing OpenCode-backed calls with `--max-concurrent 1` until `todos/022` is fixed.
-5. Compare selectors (`mean`, `controversy`, `controversy_floor_7`, `quality_x_lexdiv`) and whole-panel metrics before promoting any variant.
+The default production behavior remains score-only. Brainstorm outputs and artifact `metadata.json` now expose `iteration_strategy`, and `refinery benchmark-brainstorm` reads that metadata for grouping.
+
+Next concrete step: run the fixed six-prompt suite for each variant, serializing OpenCode-backed calls with `--max-concurrent 1` until `todos/022` is fixed. Compare selectors (`mean`, `controversy`, `controversy_floor_7`, `quality_x_lexdiv`) and whole-panel metrics before promoting any variant to public UX.
 
 ## References
 

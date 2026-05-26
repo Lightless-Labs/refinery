@@ -132,9 +132,20 @@ Added `refinery benchmark-brainstorm` as the artifact-level analyzer. It can:
 
 This gives future strategy variants a shared measurement path.
 
+### Completed 2026-05-26
+
+Added benchmark-only brainstorm iteration variants behind a hidden CLI flag:
+
+- `blind` — prompt-only every round.
+- `score-only` — production default, own prior answers plus aggregate scores.
+- `own-reviews` — own prior answers plus received peer scores and rationales.
+- `full-visibility` — all prior answers plus peer scores and rationales.
+
+The production default remains `score-only`. Brainstorm JSON/text output and dry-run output now expose `iteration_strategy`. Artifact runs now write `metadata.json` with `iteration_strategy`, and `refinery benchmark-brainstorm` reads that metadata so benchmark outputs can group runs by iteration strategy. Evaluation artifacts now include `rationale` while remaining backwards compatible with the analyzer's score loading.
+
 ## Next Implementation Step
 
-The analyzer has now been used across a 6-prompt v0 baseline suite (`docs/brainstorms/2026-05-23-six-prompt-brainstorm-benchmark.md`). Next, address the two immediate benchmark findings — quality floor (`todos/023`) and score-history meta-preambles (`todos/024`) — before implementing the minimal iteration-strategy variants (`blind`, `score-only`, `own+reviews`, `full-visibility`) behind an internal benchmark configuration.
+Run the fixed six-prompt benchmark suite across the four iteration variants (`blind`, `score-only`, `own-reviews`, `full-visibility`) using the hidden `brainstorm --iteration-strategy` flag. Continue serializing OpenCode-backed calls with `--max-concurrent 1` until `todos/022` is fixed. Compare selector outputs and whole-panel metrics before promoting any variant to public UX.
 
 ## Verification
 
@@ -145,6 +156,9 @@ Completed:
 - Offline counterfactual metrics computed from existing artifacts.
 - Artifact analyzer implemented as `refinery benchmark-brainstorm`.
 - Analyzer run against the two valid 2026-05-23 baseline artifacts and the later six-prompt suite.
+- Benchmark-only iteration variants implemented behind hidden CLI config.
 - `cargo fmt --all -- --check`
+- `cargo test -p refinery_core brainstorm`
 - `cargo test -p refinery_cli`
+- `cargo clippy -p refinery_core --all-targets -- -D warnings`
 - `cargo clippy -p refinery_cli --all-targets -- -D warnings`
