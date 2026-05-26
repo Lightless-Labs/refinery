@@ -44,6 +44,8 @@ struct BenchmarkOutput {
 #[derive(Debug, Serialize)]
 struct RunBenchmarkOutput {
     run_dir: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    iteration_strategy: Option<String>,
     final_round: u32,
     candidate_count: usize,
     selectors: Vec<SelectorOutput>,
@@ -79,6 +81,11 @@ struct EvalArtifact {
     evaluator: String,
     evaluatee: String,
     score: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RunMetadata {
+    iteration_strategy: Option<String>,
 }
 
 pub fn run(args: &BenchmarkBrainstormArgs) -> ExitCode {
@@ -125,6 +132,8 @@ fn analyze_run(run_dir: &Path, panel_size: usize) -> Result<RunBenchmarkOutput, 
     let final_round = find_final_round(run_dir)?;
     let round_dir = run_dir.join(format!("round-{final_round}"));
     let candidates = load_candidates(&round_dir)?;
+    let iteration_strategy =
+        load_run_metadata(run_dir)?.and_then(|metadata| metadata.iteration_strategy);
 
     let selectors = vec![
         selector_output("mean", select_by_mean(&candidates, panel_size)),
@@ -145,10 +154,23 @@ fn analyze_run(run_dir: &Path, panel_size: usize) -> Result<RunBenchmarkOutput, 
 
     Ok(RunBenchmarkOutput {
         run_dir: run_dir.display().to_string(),
+        iteration_strategy,
         final_round,
         candidate_count: candidates.len(),
         selectors,
     })
+}
+
+fn load_run_metadata(run_dir: &Path) -> Result<Option<RunMetadata>, String> {
+    let path = run_dir.join("metadata.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+    let metadata = serde_json::from_str(&content)
+        .map_err(|e| format!("failed to parse {}: {e}", path.display()))?;
+    Ok(Some(metadata))
 }
 
 fn find_final_round(run_dir: &Path) -> Result<u32, String> {
@@ -451,6 +473,9 @@ fn emit_text(output: &BenchmarkOutput) {
     println!("Status: {}", output.status);
     for run in &output.runs {
         println!("\nRun: {}", run.run_dir);
+        if let Some(strategy) = &run.iteration_strategy {
+            println!("Iteration strategy: {strategy}");
+        }
         println!("Final round: {}", run.final_round);
         println!("Candidates: {}", run.candidate_count);
         for selector in &run.selectors {
