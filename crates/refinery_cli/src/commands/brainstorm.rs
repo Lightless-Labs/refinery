@@ -87,42 +87,20 @@ struct BrainstormErrorMetadata {
     models_dropped: Vec<String>,
 }
 
-fn quality_floor_config(quality_floor: f64) -> Result<Option<f64>, String> {
-    if !quality_floor.is_finite() || !(0.0..=10.0).contains(&quality_floor) {
-        return Err("--quality-floor must be a finite number between 0 and 10".to_string());
-    }
-
-    if quality_floor <= 0.0 {
-        Ok(None)
-    } else {
-        Ok(Some(quality_floor))
-    }
-}
-
-fn selection_strategy_name(quality_floor: Option<f64>) -> String {
-    match quality_floor {
-        Some(floor) if (floor - floor.round()).abs() < f64::EPSILON => {
-            format!("controversy_floor_{floor:.0}")
-        }
-        Some(floor) => format!("controversy_floor_{floor}"),
-        None => "controversy".to_string(),
-    }
-}
-
 // ── Main entry point ────────────────────────────────────────────────────
 
 pub async fn run(args: BrainstormArgs) -> ExitCode {
     let shared = &args.shared;
     init_tracing(shared);
 
-    let quality_floor = match quality_floor_config(args.quality_floor) {
+    let quality_floor = match refinery_core::brainstorm::quality_floor_config(args.quality_floor) {
         Ok(floor) => floor,
         Err(e) => {
             eprintln!("Error: {e}");
             return ExitCode::from(4);
         }
     };
-    let selection_strategy = selection_strategy_name(quality_floor);
+    let selection_strategy = refinery_core::brainstorm::selection_strategy_name(quality_floor);
 
     // Dry run: estimate calls without resolving prompt or building providers
     if shared.dry_run {

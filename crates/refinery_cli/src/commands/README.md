@@ -109,13 +109,13 @@ Key findings:
 - Raw controversy reduces lexical overlap, so it does increase diversity.
 - Raw controversy can over-reward disagreement. In one debugging prompt it selected a `mean=5.67` answer first because evaluator disagreement was high.
 - Adding a quality floor (`mean_score >= 7`) preserved some diversity while improving the panel quality floor.
-- About one third of selected answers contained score-history meta-preambles like "Based on my Round 1 score..."; this needs prompt polish.
+- About one third of selected answers contained score-history meta-preambles like "Based on my Round 1 score..."; prompt polish in `todos/024` reduced this to `0.0` on two validation prompts.
 
 Current follow-ups:
 
 - `todos/023-brainstorm-quality-floor-selection.md` — completed production/configurable quality-floor selection.
-- `todos/024-brainstorm-suppress-score-history-meta-preambles.md` — suppress score-history meta-commentary in final answers.
-- `todos/013-brainstorm-strategy-benchmarks.md` — continue with iteration-strategy benchmarks after quality-floor/prompt-polish decisions.
+- `todos/024-brainstorm-suppress-score-history-meta-preambles.md` — completed prompt-only mitigation for score-history meta-commentary.
+- `todos/013-brainstorm-strategy-benchmarks.md` — continue with L2 iteration-strategy benchmarks.
 
 ### Benchmarking brainstorm artifacts
 

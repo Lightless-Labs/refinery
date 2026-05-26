@@ -119,7 +119,28 @@ fn normalized_quality_floor(quality_floor: Option<f64>) -> Option<f64> {
     quality_floor.filter(|floor| floor.is_finite() && *floor > 0.0)
 }
 
-fn selection_strategy_name(quality_floor: Option<f64>) -> String {
+/// Convert a user-supplied quality floor into brainstorm core configuration.
+///
+/// Returns `None` for `0.0`, which disables the floor and uses raw controversy.
+/// Values must be finite and within the same 1-10 range as evaluator scores.
+///
+/// # Errors
+///
+/// Returns an error when `quality_floor` is not finite or outside `0..=10`.
+pub fn quality_floor_config(quality_floor: f64) -> Result<Option<f64>, String> {
+    if !quality_floor.is_finite() || !(0.0..=10.0).contains(&quality_floor) {
+        return Err("--quality-floor must be a finite number between 0 and 10".to_string());
+    }
+
+    if quality_floor <= 0.0 {
+        Ok(None)
+    } else {
+        Ok(Some(quality_floor))
+    }
+}
+
+#[must_use]
+pub fn selection_strategy_name(quality_floor: Option<f64>) -> String {
     match normalized_quality_floor(quality_floor) {
         Some(floor) if (floor - floor.round()).abs() < f64::EPSILON => {
             format!("controversy_floor_{floor:.0}")
@@ -149,6 +170,22 @@ pub async fn run(
             rounds_completed: 0,
         });
     }
+
+    let quality_floor = match config.quality_floor {
+        Some(floor) => match quality_floor_config(floor) {
+            Ok(floor) => floor,
+            Err(message) => {
+                return Err(BrainstormError {
+                    round: 0,
+                    message,
+                    provider_failures: Vec::new(),
+                    total_calls: 0,
+                    rounds_completed: 0,
+                });
+            }
+        },
+        None => None,
+    };
 
     let permits = if config.max_concurrent == 0 {
         providers.len().pow(2).max(1)
@@ -493,7 +530,6 @@ pub async fn run(
         })
         .collect();
 
-    let quality_floor = normalized_quality_floor(config.quality_floor);
     let selection_strategy = selection_strategy_name(quality_floor);
     let panel = match quality_floor {
         Some(floor) => {
@@ -825,6 +861,48 @@ mod tests {
             "stddev should be high: got {}",
             result.panel[0].stddev
         );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn quality_floor_excludes_low_quality_controversial_answer() {
+        let pa = EchoProvider::new("test/a");
+        pa.queue_response(r#"{"answer": "controversial take"}"#.to_string());
+        pa.queue_response(eval_json(7));
+        pa.queue_response(eval_json(7));
+
+        let pb = EchoProvider::new("test/b");
+        pb.queue_response(r#"{"answer": "safe answer"}"#.to_string());
+        pb.queue_response(eval_json(3));
+        pb.queue_response(eval_json(3));
+
+        let pc = EchoProvider::new("test/c");
+        pc.queue_response(r#"{"answer": "another safe"}"#.to_string());
+        pc.queue_response(eval_json(9));
+        pc.queue_response(eval_json(9));
+
+        let providers: Vec<Arc<dyn ModelProvider>> = vec![Arc::new(pa), Arc::new(pb), Arc::new(pc)];
+        let mut config = default_config(1, 1);
+        config.quality_floor = Some(7.0);
+        let result = run(&providers, "test prompt", &config).await.unwrap();
+
+        assert_eq!(result.panel.len(), 1);
+        assert_eq!(result.panel[0].answer, "safe answer");
+        assert!(result.panel[0].mean_score >= 7.0);
+        assert_eq!(result.selection_strategy, "controversy_floor_7");
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn invalid_quality_floor_returns_config_error() {
+        let provider = Arc::new(EchoProvider::new("test/solo")) as Arc<dyn ModelProvider>;
+        let mut config = default_config(1, 1);
+        config.quality_floor = Some(11.0);
+        let result = run(&[provider], "test prompt", &config).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.round, 0);
+        assert!(err.message.contains("--quality-floor"));
+        assert_eq!(err.total_calls, 0);
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
