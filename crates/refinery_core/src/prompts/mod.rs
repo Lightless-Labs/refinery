@@ -202,8 +202,8 @@ pub fn brainstorm_system_prompt() -> String {
      Prioritize novelty, surprising connections, and depth of thinking over conventional correctness. \
      Each round you will see your previous answers and their scores — use this feedback internally to \
      push into more interesting territory, not to converge on a safe answer. \
-     Return a standalone answer for the user: do not mention scores, prior rounds, feedback, \
-     benchmarks, or selection mechanics."
+     Return a standalone answer for the user: do not mention Refinery's internal scores, prior rounds, \
+     feedback signals, benchmark process, or selection mechanics."
         .to_string()
 }
 
@@ -253,8 +253,9 @@ pub fn propose_with_score_history_prompt(user_prompt: &str, history: &ScoreHisto
          Use the scores internally to provide an improved answer to the following question. \
          Higher scores mean better quality — build on what worked, rethink what didn't. \
          Push for more original and insightful perspectives.\n\n\
-         Your final answer must stand alone for the user. Do not mention scores, score history, \
-         previous rounds, prior answers, feedback, benchmark mechanics, or selection mechanics.\n\n\
+         Your final answer must stand alone for the user. Do not mention Refinery's internal scores, \
+         score history, previous rounds, prior answers, feedback signals, benchmark process, \
+         or selection mechanics.\n\n\
          {user_prompt}"
     )
 }
@@ -621,9 +622,10 @@ mod tests {
         assert!(result.contains("<score>6.5</score>"));
         assert!(result.contains("Use the scores internally"));
         assert!(result.contains("Your final answer must stand alone for the user"));
-        assert!(result.contains("Do not mention scores, score history"));
+        assert!(result.contains("Do not mention Refinery's internal scores"));
+        assert!(result.contains("score history"));
         assert!(result.contains("previous rounds"));
-        assert!(result.contains("benchmark mechanics"));
+        assert!(result.contains("benchmark process"));
         assert!(result.contains("selection mechanics"));
     }
 
@@ -686,9 +688,9 @@ mod tests {
         let prompt = brainstorm_system_prompt();
         assert!(prompt.contains("use this feedback internally"));
         assert!(prompt.contains("Return a standalone answer for the user"));
-        assert!(prompt.contains("do not mention scores"));
+        assert!(prompt.contains("do not mention Refinery's internal scores"));
         assert!(prompt.contains("prior rounds"));
-        assert!(prompt.contains("benchmarks"));
+        assert!(prompt.contains("benchmark process"));
         assert!(prompt.contains("selection mechanics"));
     }
 }

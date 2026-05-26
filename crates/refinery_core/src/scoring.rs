@@ -53,7 +53,7 @@ fn sort_by_controversy(candidates: &mut [PanelCandidate]) {
         b.controversy_score
             .total_cmp(&a.controversy_score)
             .then_with(|| b.mean_score.total_cmp(&a.mean_score))
-            .then_with(|| a.model_id.to_string().cmp(&b.model_id.to_string()))
+            .then_with(|| a.model_id.cmp(&b.model_id))
     });
 }
 
@@ -81,6 +81,10 @@ pub fn select_panel_with_quality_floor(
     quality_floor: f64,
 ) -> Vec<PanelCandidate> {
     sort_by_controversy(candidates);
+
+    if !quality_floor.is_finite() || quality_floor <= 0.0 {
+        return candidates.iter().take(panel_size).cloned().collect();
+    }
 
     let mut selected: Vec<PanelCandidate> = candidates
         .iter()
@@ -237,6 +241,33 @@ mod tests {
         assert_eq!(panel.len(), 2);
         assert_eq!(panel[0].model_id, ModelId::new("test/strong_controversial"));
         assert_eq!(panel[1].model_id, ModelId::new("test/solid"));
+    }
+
+    #[test]
+    fn select_panel_quality_floor_invalid_floor_falls_back_to_raw_controversy() {
+        let mut candidates = vec![
+            PanelCandidate {
+                model_id: ModelId::new("test/high_controversy"),
+                answer: "high controversy".into(),
+                mean_score: 5.67,
+                stddev: 1.25,
+                controversy_score: 7.09,
+                per_evaluator_scores: vec![],
+            },
+            PanelCandidate {
+                model_id: ModelId::new("test/low_controversy"),
+                answer: "low controversy".into(),
+                mean_score: 8.0,
+                stddev: 0.25,
+                controversy_score: 2.0,
+                per_evaluator_scores: vec![],
+            },
+        ];
+
+        let panel = select_panel_with_quality_floor(&mut candidates, 1, f64::NAN);
+
+        assert_eq!(panel.len(), 1);
+        assert_eq!(panel[0].model_id, ModelId::new("test/high_controversy"));
     }
 
     #[test]
