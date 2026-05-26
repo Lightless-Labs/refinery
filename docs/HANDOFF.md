@@ -2,7 +2,7 @@
 
 Current state of the project and active work. Read this at session start. Update before compaction or at natural breakpoints.
 
-**Last updated:** 2026-05-25
+**Last updated:** 2026-05-26
 
 ## Project State
 
@@ -14,7 +14,7 @@ Current state of the project and active work. Read this at session start. Update
 |------|----|--------|-----------|-----------|
 | `converge` | #24 | merged | own+reviews | vote-threshold |
 | `synthesize` | #26 | merged | own+reviews (converge) → custom synthesis | highest score |
-| `brainstorm` | #28 | merged | score-only | controversial (mean×stddev) |
+| `brainstorm` | #28, #37 | merged | score-only | controversial with quality floor |
 
 ### Planned Verbs
 
@@ -58,7 +58,7 @@ Triage pattern: fix P1/P2 with code, create TODOs for P3/nitpicks, reply to ever
 
 ## Recent Context
 
-- PR #37 opened 2026-05-25 from `feat/brainstorm-quality-floor-selection`: includes brainstorm quality-floor selection (`todos/023`) and score-history meta-preamble prompt polish (`todos/024`). Quality-floor default is `--quality-floor 7.0`, `--quality-floor 0` preserves raw controversy, and brainstorm output exposes `selection_strategy`. Prompt polish validation is documented in `docs/brainstorms/2026-05-25-brainstorm-meta-preamble-prompt-polish.md`; product and technical reruns completed non-degraded with Codex + GLM + Kimi + MiniMax and analyzer reported `meta_preamble_rate: 0.0` for all selectors. Gemini and CodeRabbit review feedback was addressed by comparing `ModelId` directly, reusing public core quality-floor helpers from the CLI, validating core quality-floor config, adding core quality-floor tests, emitting JSON config errors for invalid brainstorm quality floors, handling NaN mean scores during quality-floor backfill, and updating docs/style. Local pi review with `openai-codex/gpt-5.5` at `xhigh` was run twice: first review found wording/validation/test/docs issues, all fixed; re-review reported no blocking or actionable issues. Verification run across the branch: `cargo fmt --all -- --check`, `cargo test -p refinery_core scoring`, `cargo test -p refinery_core brainstorm`, `cargo test -p refinery_core prompts`, `cargo test -p refinery_cli`, `cargo clippy -p refinery_core --all-targets -- -D warnings`, `cargo clippy -p refinery_cli --all-targets -- -D warnings`, `cargo build --workspace`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, plus manual brainstorm dry-run/config-error checks.
+- PR #37 merged 2026-05-26 (`feat: add brainstorm quality floor and prompt polish`): includes brainstorm quality-floor selection (`todos/023`) and score-history meta-preamble prompt polish (`todos/024`). Quality-floor default is `--quality-floor 7.0`, `--quality-floor 0` preserves raw controversy, and brainstorm output exposes `selection_strategy`. Prompt polish validation is documented in `docs/brainstorms/2026-05-25-brainstorm-meta-preamble-prompt-polish.md`; product and technical reruns completed non-degraded with Codex + GLM + Kimi + MiniMax and analyzer reported `meta_preamble_rate: 0.0` for all selectors. Gemini and CodeRabbit review feedback was addressed by comparing `ModelId` directly, reusing public core quality-floor helpers from the CLI, validating core quality-floor config, adding core quality-floor tests, emitting JSON config errors for invalid brainstorm quality floors, handling NaN mean scores during quality-floor backfill, and updating docs/style. Local pi review with `openai-codex/gpt-5.5` at `xhigh` was run twice: first review found wording/validation/test/docs issues, all fixed; re-review reported no blocking or actionable issues. GitHub Actions, Buildkite, and CodeRabbit passed; PR was merged through the queue. Verification run across the branch: `cargo fmt --all -- --check`, `cargo test -p refinery_core scoring`, `cargo test -p refinery_core brainstorm`, `cargo test -p refinery_core prompts`, `cargo test -p refinery_cli`, `cargo clippy -p refinery_core --all-targets -- -D warnings`, `cargo clippy -p refinery_cli --all-targets -- -D warnings`, `cargo build --workspace`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, plus manual brainstorm dry-run/config-error checks.
 - 2026-05-25 brainstorm score-history meta-preamble prompt polish completed (`todos/024`, `docs/plans/2026-05-25-001-fix-brainstorm-score-history-meta-preambles-plan.md`, `docs/brainstorms/2026-05-25-brainstorm-meta-preamble-prompt-polish.md`): `brainstorm_system_prompt()` and `propose_with_score_history_prompt()` now tell models to use scores internally and return standalone user-facing answers without mentioning scores, prior rounds, feedback, benchmarks, or selection mechanics. Added prompt tests verifying the instruction and that score history is still present. Reran product and technical benchmark prompts with Codex + GLM + Kimi + MiniMax; both completed non-degraded and analyzer reported `meta_preamble_rate: 0.0` for all selectors, improved from the prior 0.333 baseline. Verified with `cargo fmt --all -- --check`, `cargo test -p refinery_core prompts`, and `cargo clippy -p refinery_core --all-targets -- -D warnings`.
 - 2026-05-25 Buildkite migration started: cloned local checkout at `/Users/elfitz/Projects/lightless-labs/refinery`, created branch `chore/buildkite-linux-arm64-ci`, added `.buildkite/pipeline.yml` using `github.com/Bande-a-Bonnot/tart-ci#v0.1.1` on queue `ci-linux-arm64`, and opened PR #35 (`ci: add Buildkite Linux ARM64 pipeline`). Buildkite pipeline `la-bande-a-bonnot/refinery` was created. Build #6 passed on the persistent `big-cabbage` Tart runner after builds #1-#5 exposed Buildkite shell interpolation and Rust home-dir issues; fixed by normalizing `HOME`, forcing `CARGO_HOME`/`RUSTUP_HOME`, and escaping shell variables as `$$` in Buildkite YAML. Review feedback then flagged non-deterministic `ubuntu:latest` and redundant Cargo commands; fixed by pinning the Tart Ubuntu image to digest `sha256:e90dfc9e6dffb742809f32e61ee03daf5fa6ee30e24ee05c105beffa3b7c9540` and dropping `cargo check` / duplicate clippy `-D warnings`. Build #7 passed with those review fixes.
 - PR #28 / `feat/brainstorm-verb` merged the brainstorm verb: core loop in `refinery_core::brainstorm::run()`, scoring in `refinery_core::scoring`, prompts in `prompts/brainstorm.rs`, CLI in `commands/brainstorm.rs`.
@@ -84,9 +84,8 @@ Triage pattern: fix P1/P2 with code, create TODOs for P3/nitpicks, reply to ever
 
 Recommended order:
 
-1. Review PR #37 (`feat: improve brainstorm panel quality`) for brainstorm quality-floor + meta-preamble fixes.
-2. If continuing Buildkite migration, review PR #35 and Buildkite build #7, then decide whether to merge the Linux ARM64 pipeline and/or replace the bootstrap installs with a baked CI image.
-3. Start from clean `main` and read this handoff plus the valid baseline in `docs/brainstorms/2026-05-23-brainstorm-smoke-baseline.md`.
-4. If continuing brainstorm strategy work after PR #37, start `todos/013` L2 benchmark-only iteration variants (`blind`, `score-only`, `own+reviews`, `full-visibility`) after deciding the minimal config/API surface.
-5. Consider addressing `todos/022` before running more OpenCode-heavy multi-model panels; for now use `--max-concurrent 1` with multiple OpenCode-backed models and `--idle-timeout 480` for long prompts.
-6. Do not implement Open Collider-style domain collisions before benchmark budget constraints are explicit.
+1. If continuing Buildkite migration, review PR #35 and Buildkite build #7, then decide whether to merge the Linux ARM64 pipeline and/or replace the bootstrap installs with a baked CI image.
+2. Start from clean `main` and read this handoff plus the valid baseline in `docs/brainstorms/2026-05-23-brainstorm-smoke-baseline.md`.
+3. If continuing brainstorm strategy work, start `todos/013` L2 benchmark-only iteration variants (`blind`, `score-only`, `own+reviews`, `full-visibility`) after deciding the minimal config/API surface.
+4. Consider addressing `todos/022` before running more OpenCode-heavy multi-model panels; for now use `--max-concurrent 1` with multiple OpenCode-backed models and `--idle-timeout 480` for long prompts.
+5. Do not implement Open Collider-style domain collisions before benchmark budget constraints are explicit.
