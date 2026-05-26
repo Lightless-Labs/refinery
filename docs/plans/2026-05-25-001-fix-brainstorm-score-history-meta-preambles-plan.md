@@ -8,6 +8,8 @@ completed: 2026-05-25
 
 # Plan: Suppress Brainstorm Score-History Meta-Preambles
 
+**Reviewed:** 2026-05-26 (via `/codex-review / local-pi`)
+
 **Completed:** 2026-05-25
 
 **Validation:** `docs/brainstorms/2026-05-25-brainstorm-meta-preamble-prompt-polish.md`
@@ -24,9 +26,9 @@ The six-prompt brainstorm benchmark found frequent final-answer preambles such a
 
 ## Non-Goals
 
-- Do not add a cleanup/rewrite provider pass yet.
-- Do not expose evaluator rationales or peer content to brainstorm proposers.
-- Do not run a broad provider benchmark unless credentials/capacity are available and the run budget is explicitly accepted.
+- Avoid adding a cleanup/rewrite provider pass yet.
+- Keep evaluator rationales and peer content hidden from brainstorm proposers.
+- Skip broad provider benchmarks unless credentials/capacity are available and the run budget is explicitly accepted.
 
 ## Implementation Steps
 

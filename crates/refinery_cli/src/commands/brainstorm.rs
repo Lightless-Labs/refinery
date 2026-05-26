@@ -10,8 +10,8 @@ use refinery_core::brainstorm::{
 use refinery_core::types::ModelId;
 
 use super::common::{
-    DryRunOutput, MetadataOutput, OutputFormat, SharedArgs, build_providers, emit_dry_run_json,
-    init_tracing, make_run_dir, resolve_prompt,
+    DryRunOutput, ErrorResponse, MetadataOutput, OutputFormat, SharedArgs, build_providers,
+    emit_dry_run_json, init_tracing, make_run_dir, resolve_prompt,
 };
 
 #[derive(Parser, Debug)]
@@ -87,6 +87,31 @@ struct BrainstormErrorMetadata {
     models_dropped: Vec<String>,
 }
 
+fn emit_config_error(shared: &SharedArgs, message: &str) -> ExitCode {
+    match shared.output_format {
+        OutputFormat::Json => {
+            let err = ErrorResponse {
+                status: "error".to_string(),
+                error: super::common::ErrorDetail {
+                    code: "config_invalid".to_string(),
+                    message: message.to_string(),
+                    provider: None,
+                    round: None,
+                    phase: Some("brainstorm".to_string()),
+                    retryable: false,
+                },
+            };
+            match serde_json::to_string_pretty(&err) {
+                Ok(json) => eprintln!("{json}"),
+                Err(e) => eprintln!("Error: {message} (serialization failed: {e})"),
+            }
+        }
+        OutputFormat::Text => eprintln!("Error: {message}"),
+    }
+
+    ExitCode::from(4)
+}
+
 // ── Main entry point ────────────────────────────────────────────────────
 
 pub async fn run(args: BrainstormArgs) -> ExitCode {
@@ -95,10 +120,7 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
 
     let quality_floor = match refinery_core::brainstorm::quality_floor_config(args.quality_floor) {
         Ok(floor) => floor,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            return ExitCode::from(4);
-        }
+        Err(e) => return emit_config_error(shared, &e),
     };
     let selection_strategy = refinery_core::brainstorm::selection_strategy_name(quality_floor);
 

@@ -109,7 +109,7 @@ Key findings:
 - Raw controversy reduces lexical overlap, so it does increase diversity.
 - Raw controversy can over-reward disagreement. In one debugging prompt it selected a `mean=5.67` answer first because evaluator disagreement was high.
 - Adding a quality floor (`mean_score >= 7`) preserved some diversity while improving the panel quality floor.
-- About one third of selected answers contained score-history meta-preambles like "Based on my Round 1 score..."; prompt polish in `todos/024` reduced this to `0.0` on two validation prompts.
+- About one-third of selected answers contained score-history meta-preambles like "Based on my Round 1 score..."; prompt polish in `todos/024` reduced this to `0.0` on two validation prompts.
 
 Current follow-ups:
 
