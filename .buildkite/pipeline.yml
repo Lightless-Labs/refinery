@@ -6,6 +6,8 @@ env:
 steps:
   - label: ":rust: Linux ARM64 Rust CI"
     key: rust-linux-arm64
+    concurrency: 2
+    concurrency_group: "big-cabbage/tart-ci"
     agents:
       queue: "ci-linux-arm64"
     plugins:
