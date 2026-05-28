@@ -22,7 +22,7 @@ Use `converge` when you want one reliable answer and consensus is desirable.
 
 ```sh
 refinery converge "What are the key trade-offs in this design?" \
-  --models codex-cli,opencode/kimi-for-coding/kimi-k2-thinking
+  --models pi/openai/gpt-5.4,codex-cli
 ```
 
 Mechanics:
@@ -44,7 +44,7 @@ Use `synthesize` when the best answer may require combining parts of several mod
 
 ```sh
 refinery synthesize "Design an auth architecture for this app" \
-  --models codex-cli,opencode/zai-coding-plan/glm-5.1 \
+  --models pi/openai/gpt-5.4,codex-cli \
   --converge-rounds 2
 ```
 
@@ -68,7 +68,7 @@ Use `brainstorm` when you want breadth: multiple distinct, useful answers rather
 ```sh
 refinery brainstorm \
   "Generate unconventional but practical product ideas for a privacy-first team memory assistant" \
-  --models codex-cli,opencode/zai-coding-plan/glm-5.1,opencode/kimi-for-coding/kimi-k2-thinking,opencode/minimax-coding-plan/MiniMax-M2.5 \
+  --models pi/openai/gpt-5.4,pi/openai/o3-pro,codex-cli,opencode/zai-coding-plan/glm-5.1 \
   --max-rounds 2 \
   --panel-size 3 \
   --max-concurrent 1
@@ -142,6 +142,8 @@ It reports panel quality, quality floor, evaluator disagreement, lexical overlap
 | `evolve` | Designed, not implemented. | Darwinian blind variation with score-only pressure; cull low performers and restart lineages. |
 
 ## Provider Notes for Verb Benchmarks
+
+Prefer Pi-backed model routing for benchmark panels: use `pi/<provider>/<model>` and configure credentials/models in Pi's local config. OpenCode remains supported for users who prefer local OpenCode config.
 
 When running multiple OpenCode-backed models (`opencode/...`) in the same panel, use serial execution for now:
 

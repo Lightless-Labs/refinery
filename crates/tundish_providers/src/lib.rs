@@ -10,6 +10,8 @@ pub mod codex;
 pub mod gemini;
 #[cfg(feature = "opencode")]
 pub mod opencode;
+#[cfg(feature = "pi")]
+pub mod pi;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -25,6 +27,8 @@ const SUPPORTED_PROVIDERS: &[&str] = &[
     "gemini-cli",
     #[cfg(feature = "opencode")]
     "opencode",
+    #[cfg(feature = "pi")]
+    "pi",
 ];
 
 fn supported_providers() -> String {
@@ -78,6 +82,17 @@ pub fn build_provider(
         "opencode" => {
             let provider = opencode::OpenCodeProvider::new(
                 model_id.clone(),
+                max_timeout,
+                idle_timeout,
+                progress,
+            )?;
+            Ok(Arc::new(provider))
+        }
+        #[cfg(feature = "pi")]
+        "pi" => {
+            let provider = pi::PiProvider::new(
+                model_id.clone(),
+                allowed_tools,
                 max_timeout,
                 idle_timeout,
                 progress,

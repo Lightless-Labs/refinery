@@ -40,6 +40,22 @@ pub fn codex_tool(canonical: &str) -> Option<&'static str> {
     }
 }
 
+/// Map a canonical tool name to pi's native built-in tool name.
+#[must_use]
+pub fn pi_tool(canonical: &str) -> Option<&'static str> {
+    match canonical {
+        "file_read" => Some("read"),
+        "file_write" => Some("write"),
+        "shell" => Some("bash"),
+        "web_fetch" => Some("web_fetch"),
+        "web_search" => Some("web_search"),
+        "grep" => Some("grep"),
+        "find" => Some("find"),
+        "ls" => Some("ls"),
+        _ => None,
+    }
+}
+
 /// Resolve canonical tool names to provider-native names.
 ///
 /// Returns `(resolved, unknown)` — resolved native names and unrecognized canonical names.
@@ -80,6 +96,14 @@ mod tests {
     fn gemini_maps_web_fetch_and_web_search_to_same() {
         assert_eq!(gemini_tool("web_fetch"), Some("web_search"));
         assert_eq!(gemini_tool("web_search"), Some("web_search"));
+    }
+
+    #[test]
+    fn pi_maps_file_and_shell_tools() {
+        assert_eq!(pi_tool("file_read"), Some("read"));
+        assert_eq!(pi_tool("file_write"), Some("write"));
+        assert_eq!(pi_tool("shell"), Some("bash"));
+        assert_eq!(pi_tool("web_search"), Some("web_search"));
     }
 
     #[test]

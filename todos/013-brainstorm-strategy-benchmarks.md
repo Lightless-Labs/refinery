@@ -94,7 +94,7 @@ Benchmark-only iteration variants are now implemented behind hidden/internal CLI
 
 The default production behavior remains score-only. Brainstorm outputs and artifact `metadata.json` now expose `iteration_strategy`, and `refinery benchmark-brainstorm` reads that metadata for grouping.
 
-Next concrete step: run the fixed six-prompt suite for each variant, serializing OpenCode-backed calls with `--max-concurrent 1` until `todos/022` is fixed. Compare selectors (`mean`, `controversy`, `controversy_floor_7`, `quality_x_lexdiv`) and whole-panel metrics before promoting any variant to public UX.
+Next concrete step: run the fixed six-prompt suite for each variant using Pi-backed model routing where possible. If OpenCode-backed models are included from local config, serialize them with `--max-concurrent 1` until `todos/022` is fixed. Compare selectors (`mean`, `controversy`, `controversy_floor_7`, `quality_x_lexdiv`) and whole-panel metrics before promoting any variant to public UX.
 
 ## References
 
