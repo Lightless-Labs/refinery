@@ -24,7 +24,7 @@ pub struct SharedArgs {
     #[arg(long = "file", short = 'f', value_name = "PATH")]
     pub files: Vec<PathBuf>,
 
-    /// Comma-separated model list [e.g., claude-code,codex-cli/o3-pro,gemini-cli]
+    /// Comma-separated model list [e.g., pi/openai/gpt-5.4,codex-cli/o3-pro,opencode/zai-coding-plan/glm-5]
     #[arg(short, long, value_delimiter = ',')]
     pub models: Vec<String>,
 
@@ -300,24 +300,20 @@ pub fn parse_model_spec(input: &str) -> Result<ModelId, String> {
         Ok(ModelId::from_parts(provider, model))
     } else {
         match input {
-            "claude-code" => Ok(ModelId::from_parts("claude-code", "claude-opus-4-6")),
             "codex-cli" => Ok(ModelId::from_parts("codex-cli", "gpt-5.4")),
-            "gemini-cli" => Ok(ModelId::from_parts("gemini-cli", "gemini-3.1-pro-preview")),
-            "claude" | "codex" | "gemini" => {
-                let suggestion = match input {
-                    "claude" => "claude-code",
-                    "codex" => "codex-cli",
-                    "gemini" => "gemini-cli",
-                    _ => unreachable!("matched shorthand provider aliases only"),
-                };
-                Err(format!(
-                    "Unknown provider '{input}'. The format is now 'provider/model'. \
-                     Did you mean '{suggestion}'? \
-                     Supported providers: claude-code, codex-cli, gemini-cli, opencode"
-                ))
-            }
+            "pi" => Err(
+                "Provider 'pi' requires an explicit pi model, e.g. 'pi/openai/gpt-5.4'"
+                    .to_string(),
+            ),
+            "opencode" => Err(
+                "Provider 'opencode' requires an explicit model, e.g. 'opencode/zai-coding-plan/glm-5'"
+                    .to_string(),
+            ),
+            "claude" | "claude-code" | "gemini" | "gemini-cli" => Err(format!(
+                "Provider '{input}' is no longer a default option. Use pi/<provider>/<model>, codex-cli, or opencode/<provider>/<model>."
+            )),
             _ => Err(format!(
-                "Unknown provider '{input}'. Supported: claude-code, codex-cli, gemini-cli, opencode"
+                "Unknown provider '{input}'. Supported: pi, codex-cli, opencode"
             )),
         }
     }
@@ -527,5 +523,30 @@ pub fn converge_error_to_detail(err: &refinery_core::ConvergeError) -> ErrorDeta
             phase: None,
             retryable: false,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_model_spec_accepts_pi_model_path() {
+        let model = parse_model_spec("pi/openai/gpt-5.4").unwrap();
+        assert_eq!(model.provider(), "pi");
+        assert_eq!(model.model(), "openai/gpt-5.4");
+    }
+
+    #[test]
+    fn parse_model_spec_keeps_codex_default_alias() {
+        let model = parse_model_spec("codex-cli").unwrap();
+        assert_eq!(model.provider(), "codex-cli");
+        assert_eq!(model.model(), "gpt-5.4");
+    }
+
+    #[test]
+    fn parse_model_spec_rejects_legacy_default_providers() {
+        assert!(parse_model_spec("claude-code").is_err());
+        assert!(parse_model_spec("gemini-cli").is_err());
     }
 }

@@ -29,7 +29,7 @@ Set up credentials for at least one provider (see [Credentials](#credentials))
 
 ```sh
 refinery converge "What are the three most impactful breakthroughs in physics?" \
-  --models claude-code,codex-cli,gemini-cli
+  --models pi/openai/gpt-5.4,codex-cli,opencode/zai-coding-plan/glm-5
 ```
 
 Models propose, evaluate each other, and repeat until consensus.
@@ -51,29 +51,35 @@ See [`crates/refinery_cli/src/commands/README.md`](crates/refinery_cli/src/comma
 Pass models as a comma-separated list using `provider/model` format
 
 ```sh
-refinery converge "your prompt" --models claude-code/claude-opus-4-6,gemini-cli/gemini-3.1-pro-preview
+refinery converge "your prompt" --models pi/openai/gpt-5.4,opencode/zai-coding-plan/glm-5
 ```
 
-Short aliases use each provider's default model
+`pi` and `opencode` require explicit model IDs. `codex-cli` still has a short alias for its default model:
 
 ```sh
-refinery converge "your prompt" --models claude-code,codex-cli,gemini-cli
+refinery converge "your prompt" --models codex-cli,pi/openai/gpt-5.4
 ```
 
 Refinery dispatches prompts to locally installed and authenticated CLI tools. Install and authenticate any of the supported CLIs, then pass them as `--models`:
 
 | Provider | Default model | CLI binary | Install |
 |----------|---------------|------------|---------|
-| `claude-code` | claude-opus-4-6 | `claude` | `npm i -g @anthropic-ai/claude-code` |
+| `pi` | *(none — model required)* | `pi` | [pi.dev](https://pi.dev) |
 | `codex-cli` | gpt-5.4 | `codex` | `npm i -g @openai/codex` |
-| `gemini-cli` | gemini-3.1-pro-preview | `gemini` | `npm i -g @google/gemini-cli` |
 | `opencode` | *(none — model required)* | `opencode` | [opencode.ai](https://opencode.ai) |
 
-Override the model with `provider/model` syntax:
+### Pi models
+
+Use `pi/<provider>/<model>`; Refinery passes the part after `pi/` directly to `pi --model` and reads Pi's JSON event stream:
 
 ```sh
-refinery converge "prompt" --models claude-code/claude-sonnet-4-6,codex-cli/o3-pro
+refinery converge "prompt" --models \
+  pi/openai/gpt-5.4,\
+  pi/openai/o3-pro,\
+  pi/custom-provider/custom-model
 ```
+
+Run `pi --list-models` to list locally configured Pi models. Pi manages credentials and custom models through its own local config.
 
 ### OpenCode models
 
@@ -91,11 +97,12 @@ Run `opencode models` to list all available models.
 
 ### Mixing providers
 
-Use any combination of providers in a single run:
+Use any combination of supported providers in a single run:
 
 ```sh
 refinery converge "prompt" --models \
-  claude-code,codex-cli,gemini-cli,\
+  pi/openai/gpt-5.4,\
+  codex-cli,\
   opencode/kimi-for-coding/kimi-k2-thinking,\
   opencode/zai-coding-plan/glm-5
 ```
@@ -105,37 +112,37 @@ refinery converge "prompt" --models \
 Set the convergence threshold
 
 ```sh
-refinery converge "prompt" --models claude-code,codex-cli --threshold 9.0
+refinery converge "prompt" --models pi/openai/gpt-5.4,codex-cli --threshold 9.0
 ```
 
 Limit the number of rounds
 
 ```sh
-refinery converge "prompt" --models claude-code,codex-cli --max-rounds 3
+refinery converge "prompt" --models pi/openai/gpt-5.4,codex-cli --max-rounds 3
 ```
 
 Require more consecutive rounds of stable leadership before converging (must be between 1 and 20, and <= `--max-rounds`)
 
 ```sh
-refinery converge "prompt" --models claude-code,codex-cli --stability-rounds 3
+refinery converge "prompt" --models pi/openai/gpt-5.4,codex-cli --stability-rounds 3
 ```
 
 Set per-call timeout (seconds)
 
 ```sh
-refinery converge "prompt" --models claude-code,codex-cli --timeout 180
+refinery converge "prompt" --models pi/openai/gpt-5.4,codex-cli --timeout 180
 ```
 
 Limit concurrent API calls
 
 ```sh
-refinery converge "prompt" --models claude-code,codex-cli --max-concurrent 4
+refinery converge "prompt" --models pi/openai/gpt-5.4,codex-cli --max-concurrent 4
 ```
 
 Set brainstorm's panel quality floor (default 7.0; use 0 for raw controversy)
 
 ```sh
-refinery brainstorm "prompt" --models claude-code,codex-cli,gemini-cli --quality-floor 7.5
+refinery brainstorm "prompt" --models pi/openai/gpt-5.4,codex-cli,opencode/zai-coding-plan/glm-5 --quality-floor 7.5
 ```
 
 ### Output Formats
@@ -143,13 +150,13 @@ refinery brainstorm "prompt" --models claude-code,codex-cli,gemini-cli --quality
 Output is plain text by default. Get JSON for programmatic use
 
 ```sh
-refinery converge "prompt" --models claude-code,codex-cli --output-format json
+refinery converge "prompt" --models pi/openai/gpt-5.4,codex-cli --output-format json
 ```
 
 ```json
 {
   "status": "converged",
-  "winner": { "model_id": "claude-code/claude-opus-4-6", "answer": "..." },
+  "winner": { "model_id": "pi/openai/gpt-5.4", "answer": "..." },
   "final_round": 2,
   "strategy": "vote-threshold",
   "all_answers": [{ "model_id": "...", "answer": "...", "mean_score": 9.5 }],
@@ -162,7 +169,7 @@ refinery converge "prompt" --models claude-code,codex-cli --output-format json
 Estimate API call count without running
 
 ```sh
-refinery converge "prompt" --models claude-code,codex-cli,gemini-cli --dry-run
+refinery converge "prompt" --models pi/openai/gpt-5.4,codex-cli,opencode/zai-coding-plan/glm-5 --dry-run
 ```
 
 ### Benchmark Brainstorm Artifacts
@@ -181,13 +188,13 @@ Pass one or more files with `-f`/`--file` (repeatable, 1 MB total)
 
 ```sh
 # Files as the subject — no text prompt needed
-refinery converge --file src/auth.rs --file src/crypto.rs --models claude-code,codex-cli,gemini-cli
+refinery converge --file src/auth.rs --file src/crypto.rs --models pi/openai/gpt-5.4,codex-cli
 
 # Files with an instruction prompt
-refinery converge "review these for security issues" --file src/auth.rs --file src/lib.rs --models claude-code,codex-cli
+refinery converge "review these for security issues" --file src/auth.rs --file src/lib.rs --models pi/openai/gpt-5.4,codex-cli
 
 # Combine stdin instruction with a file
-echo "what does this do?" | refinery converge - --file src/main.rs --models claude-code,gemini-cli
+echo "what does this do?" | refinery converge - --file src/main.rs --models pi/openai/gpt-5.4,codex-cli
 ```
 
 File contents are wrapped in nonce-tagged blocks (`<file-{nonce} path="...">`) so models know which content came from where. Non-UTF-8 files and files exceeding the 1 MB budget are rejected with a clear error before any API calls are made.
@@ -197,14 +204,14 @@ File contents are wrapped in nonce-tagged blocks (`<file-{nonce} path="...">`) s
 Pipe a prompt from another command (max 1 MB)
 
 ```sh
-cat question.txt | refinery converge - --models claude-code,codex-cli
+cat question.txt | refinery converge - --models pi/openai/gpt-5.4,codex-cli
 ```
 
 ### Verbose and Debug
 
 ```sh
-refinery converge "prompt" --models claude-code,codex-cli --verbose  # per-round progress
-refinery converge "prompt" --models claude-code,codex-cli --debug    # raw CLI invocations
+refinery converge "prompt" --models pi/openai/gpt-5.4,codex-cli --verbose  # per-round progress
+refinery converge "prompt" --models pi/openai/gpt-5.4,codex-cli --debug    # raw CLI invocations
 ```
 
 ### Exit Codes
@@ -570,35 +577,18 @@ println!("{} calls/round, {} total", estimate.calls_per_round, estimate.total_ca
 
 ## Credentials
 
-Set credentials via environment variables. You need at least one provider.
+Set up credentials in the local provider tools. You need at least one provider.
 
-Copy `.env.example` to `.env` and fill in your credentials:
+### Pi
 
-```bash
-cp .env.example .env
-```
-
-### Anthropic (Claude)
-
-**API Key** (pay-per-use) — set `ANTHROPIC_API_KEY`:
-
-1. Create an account at [console.anthropic.com](https://console.anthropic.com/)
-2. Go to **Settings → API Keys**
-3. Click **Create Key**, give it a name, and copy the value
+Pi manages providers, models, and credentials through its own local config. Install Pi from [pi.dev](https://pi.dev), authenticate or configure models there, then use `pi/<provider>/<model>` in Refinery:
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-api03-...
+pi --list-models
+refinery converge "prompt" --models pi/openai/gpt-5.4
 ```
 
-**Subscription** (Claude Pro/Max) — set `CLAUDE_CODE_OAUTH_TOKEN`:
-
-1. Install the Claude CLI: `npm install -g @anthropic-ai/claude-code`
-2. Run `claude setup-token` and follow the prompts — this generates a long-lived (~1 year) token
-3. Copy the token it outputs
-
-```bash
-CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
-```
+Refinery invokes Pi in JSON mode with `--no-session`, `--no-context-files`, and no tools by default.
 
 ### OpenAI (Codex)
 
@@ -620,26 +610,6 @@ The Codex CLI also accepts `CODEX_API_KEY` for non-interactive (`codex exec`) mo
 CODEX_API_KEY=sk-...
 ```
 
-### Google (Gemini)
-
-**API Key** (Google AI Studio) — set `GEMINI_API_KEY`:
-
-1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
-2. Sign in with your Google account
-3. Click **Create API Key**, select a Google Cloud project (one will be created if needed), and copy the value
-
-```bash
-GEMINI_API_KEY=AI...
-```
-
-**Alternative** (Google Cloud) — set `GOOGLE_API_KEY`:
-
-If you already have a Google Cloud API key with the Generative Language API enabled, you can use it directly.
-
-```bash
-GOOGLE_API_KEY=AI...
-```
-
 ### OpenCode
 
 OpenCode manages its own credentials. Install and authenticate:
@@ -653,14 +623,6 @@ opencode auth
 ```
 
 No environment variables needed — refinery passes `HOME` so OpenCode can find its stored credentials.
-
-### AWS Bedrock
-
-Coming soon — for accessing Claude and other models via AWS Bedrock.
-
-### Google Cloud (Vertex AI)
-
-Coming soon — for accessing Gemini via Vertex AI.
 
 ## How It Works
 

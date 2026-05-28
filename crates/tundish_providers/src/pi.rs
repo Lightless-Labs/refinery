@@ -1,0 +1,319 @@
+use std::path::PathBuf;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use tundish_core::ModelProvider;
+use tundish_core::error::ProviderError;
+use tundish_core::progress::ProgressFn;
+use tundish_core::types::{Message, ModelId};
+
+use crate::{process, tools};
+
+/// pi CLI provider adapter.
+///
+/// Invokes: `pi --mode json --no-session --no-context-files --model provider/model "PROMPT"`
+///
+/// The model name is the full pi model spec after `pi/`, e.g.
+/// `pi/openai/gpt-5.4` passes `openai/gpt-5.4` to `pi --model`.
+/// pi manages its own credentials and model registry in local config.
+pub struct PiProvider {
+    model_id: ModelId,
+    binary_path: PathBuf,
+    pi_model: String,
+    allowed_tools: Vec<String>,
+    max_timeout: Duration,
+    idle_timeout: Duration,
+    progress: Option<ProgressFn>,
+}
+
+impl std::fmt::Debug for PiProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PiProvider")
+            .field("model_id", &self.model_id)
+            .field("pi_model", &self.pi_model)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PiProvider {
+    /// Create a new pi provider.
+    pub fn new(
+        model_id: ModelId,
+        canonical_tools: &[String],
+        max_timeout: Duration,
+        idle_timeout: Duration,
+        progress: Option<ProgressFn>,
+    ) -> Result<Self, ProviderError> {
+        let binary_path = process::resolve_binary("pi")?;
+        let pi_model = model_id.model().to_string();
+
+        let (allowed_tools, unknown) = tools::resolve(canonical_tools, tools::pi_tool);
+        for name in &unknown {
+            tracing::warn!(provider = "pi", tool = %name, "unknown tool, skipping");
+        }
+
+        Ok(Self {
+            model_id,
+            binary_path,
+            pi_model,
+            allowed_tools,
+            max_timeout,
+            idle_timeout,
+            progress,
+        })
+    }
+
+    fn build_args(&self, system_prompt: &str, user_prompt: &str) -> Vec<String> {
+        let mut args = vec![
+            "--mode".to_string(),
+            "json".to_string(),
+            "--no-session".to_string(),
+            "--no-context-files".to_string(),
+            "--model".to_string(),
+            self.pi_model.clone(),
+            "--system-prompt".to_string(),
+            system_prompt.to_string(),
+        ];
+
+        if self.allowed_tools.is_empty() {
+            args.push("--no-tools".to_string());
+        } else {
+            args.push("--tools".to_string());
+            args.push(self.allowed_tools.join(","));
+        }
+
+        args.push(user_prompt.to_string());
+        args
+    }
+}
+
+#[async_trait]
+impl ModelProvider for PiProvider {
+    async fn send_message(
+        &self,
+        messages: &[Message],
+        schema: Option<&str>,
+    ) -> Result<String, ProviderError> {
+        let (system_prompt, user_prompt) = process::extract_prompts(messages);
+        let user_prompt = match schema {
+            Some(schema) => format!(
+                "{user_prompt}\n\nRespond with ONLY a JSON object matching this JSON Schema. \
+                 Do not include markdown fences or explanatory text.\n\n```json\n{schema}\n```"
+            ),
+            None => user_prompt,
+        };
+
+        let args = self.build_args(&system_prompt, &user_prompt);
+        let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+
+        // pi manages credentials in local config. Preserve HOME and disable pi's
+        // startup update/telemetry network calls without disabling model traffic.
+        let home = std::env::var("HOME").ok();
+        let mut env_vars: Vec<(&str, &str)> =
+            vec![("PI_SKIP_VERSION_CHECK", "1"), ("PI_TELEMETRY", "0")];
+        if let Some(ref h) = home {
+            env_vars.push(("HOME", h.as_str()));
+        }
+
+        let output = process::spawn_cli(
+            &self.binary_path,
+            &args_refs,
+            &env_vars,
+            self.max_timeout,
+            self.idle_timeout,
+            &self.model_id,
+            self.progress.clone(),
+        )
+        .await?;
+
+        extract_pi_response(&output, &self.model_id)
+    }
+
+    fn model_id(&self) -> &ModelId {
+        &self.model_id
+    }
+}
+
+/// Extract the assistant response text from pi's `--mode json` JSONL stream.
+pub fn extract_pi_response(jsonl: &str, model_id: &ModelId) -> Result<String, ProviderError> {
+    let model = model_id.clone();
+    let preview: String = jsonl.chars().take(200).collect();
+    let mut latest_message_text: Option<String> = None;
+    let mut delta_text = String::new();
+
+    for line in jsonl.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+
+        if let Some(message) = error_message_from_event(&parsed) {
+            return Err(ProviderError::ProcessFailed {
+                model,
+                message,
+                exit_code: None,
+            });
+        }
+
+        let event_type = parsed
+            .get("type")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        if event_type == "message_update" {
+            if let Some(delta) = parsed
+                .get("assistantMessageEvent")
+                .and_then(|event| event.get("delta"))
+                .and_then(|delta| delta.as_str())
+            {
+                delta_text.push_str(delta);
+            }
+        }
+
+        if matches!(event_type, "message_end" | "turn_end") {
+            if let Some(text) = parsed.get("message").and_then(assistant_message_text) {
+                latest_message_text = Some(text);
+            }
+        }
+    }
+
+    if let Some(text) = latest_message_text.filter(|text| !text.trim().is_empty()) {
+        return Ok(text);
+    }
+    if !delta_text.trim().is_empty() {
+        return Ok(delta_text);
+    }
+
+    Err(ProviderError::InvalidJson {
+        model,
+        message: format!("no assistant text found in pi JSON stream (raw: {preview})"),
+    })
+}
+
+fn assistant_message_text(message: &serde_json::Value) -> Option<String> {
+    let role = message.get("role").and_then(|role| role.as_str());
+    if role != Some("assistant") {
+        return None;
+    }
+
+    let content = message.get("content")?;
+    text_from_content(content)
+}
+
+fn text_from_content(content: &serde_json::Value) -> Option<String> {
+    if let Some(text) = content.as_str() {
+        return Some(text.to_string());
+    }
+
+    let mut parts = Vec::new();
+    for block in content.as_array()? {
+        if block.get("type").and_then(|value| value.as_str()) == Some("text") {
+            if let Some(text) = block.get("text").and_then(|value| value.as_str()) {
+                parts.push(text.to_string());
+            }
+        }
+    }
+
+    (!parts.is_empty()).then(|| parts.join(""))
+}
+
+fn error_message_from_event(event: &serde_json::Value) -> Option<String> {
+    if event.get("type").and_then(|value| value.as_str()) == Some("error") {
+        return event
+            .get("message")
+            .or_else(|| event.get("error").and_then(|error| error.get("message")))
+            .and_then(|message| message.as_str())
+            .map(str::to_string)
+            .or_else(|| Some("pi reported an error".to_string()));
+    }
+
+    let message = event.get("message")?;
+    let stop_reason = message
+        .get("stopReason")
+        .and_then(|reason| reason.as_str())
+        .unwrap_or("");
+    if stop_reason == "error" || stop_reason == "aborted" {
+        return message
+            .get("errorMessage")
+            .and_then(|error| error.as_str())
+            .map(str::to_string)
+            .or_else(|| Some(format!("pi message ended with stopReason={stop_reason}")));
+    }
+
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_args_disables_tools_by_default() {
+        let provider = PiProvider {
+            model_id: ModelId::from_parts("pi", "openai/gpt-5.4"),
+            binary_path: PathBuf::from("/usr/local/bin/pi"),
+            pi_model: "openai/gpt-5.4".to_string(),
+            allowed_tools: vec![],
+            max_timeout: Duration::from_secs(1800),
+            idle_timeout: Duration::from_secs(120),
+            progress: None,
+        };
+
+        let args = provider.build_args("system", "user");
+        assert!(args.contains(&"--mode".to_string()));
+        assert!(args.contains(&"json".to_string()));
+        assert!(args.contains(&"--no-session".to_string()));
+        assert!(args.contains(&"--no-context-files".to_string()));
+        assert!(args.contains(&"--no-tools".to_string()));
+        assert!(args.contains(&"openai/gpt-5.4".to_string()));
+    }
+
+    #[test]
+    fn build_args_allows_selected_tools() {
+        let provider = PiProvider {
+            model_id: ModelId::from_parts("pi", "openai/gpt-5.4"),
+            binary_path: PathBuf::from("/usr/local/bin/pi"),
+            pi_model: "openai/gpt-5.4".to_string(),
+            allowed_tools: vec!["read".to_string(), "bash".to_string()],
+            max_timeout: Duration::from_secs(1800),
+            idle_timeout: Duration::from_secs(120),
+            progress: None,
+        };
+
+        let args = provider.build_args("system", "user");
+        assert!(!args.contains(&"--no-tools".to_string()));
+        assert!(args.contains(&"--tools".to_string()));
+        assert!(args.contains(&"read,bash".to_string()));
+    }
+
+    #[test]
+    fn extract_message_end_text() {
+        let jsonl = r#"{"type":"session","version":3}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Hello"},{"type":"text","text":" world"}],"stopReason":"stop"}}
+{"type":"agent_end","messages":[]}"#;
+
+        let response =
+            extract_pi_response(jsonl, &ModelId::from_parts("pi", "openai/test")).unwrap();
+        assert_eq!(response, "Hello world");
+    }
+
+    #[test]
+    fn extract_streaming_delta_fallback() {
+        let jsonl = r#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"Hello "}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"world"}}"#;
+
+        let response =
+            extract_pi_response(jsonl, &ModelId::from_parts("pi", "openai/test")).unwrap();
+        assert_eq!(response, "Hello world");
+    }
+
+    #[test]
+    fn extract_error_event() {
+        let jsonl = r#"{"type":"error","message":"auth failed"}"#;
+        let err =
+            extract_pi_response(jsonl, &ModelId::from_parts("pi", "openai/test")).unwrap_err();
+        assert!(err.to_string().contains("auth failed"));
+    }
+}

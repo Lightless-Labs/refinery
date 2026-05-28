@@ -1,8 +1,9 @@
 ---
 title: "fix: handle OpenCode concurrent subprocess SQLite/WAL failures"
-priority: medium
+priority: low
 milestone: v0.3
 created: 2026-05-23
+updated: 2026-05-26
 ---
 
 # Handle OpenCode Concurrent Subprocess SQLite/WAL Failures
@@ -18,6 +19,8 @@ Failed to run the query 'PRAGMA journal_mode = WAL'
 The successful workaround was `--max-concurrent 1`, which serialized all provider calls. This is reliable but slow and underuses concurrency for non-OpenCode providers.
 
 Report: `docs/brainstorms/2026-05-23-brainstorm-smoke-baseline.md`.
+
+2026-05-26 update: benchmark runs should prefer the new `pi/<provider>/<model>` adapter where possible. OpenCode remains supported for users with local OpenCode config, but this issue no longer blocks the primary benchmark lane.
 
 ## Candidate Fixes
 

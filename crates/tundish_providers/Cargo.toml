@@ -6,11 +6,12 @@ rust-version.workspace = true
 description = "Provider implementations for multi-model prompt dispatch"
 
 [features]
-default = ["claude", "codex", "gemini", "opencode"]
+default = ["codex", "opencode", "pi"]
 claude = []
 codex = []
 gemini = []
 opencode = []
+pi = []
 
 [dependencies]
 tundish_core = { workspace = true }

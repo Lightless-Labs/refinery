@@ -145,7 +145,7 @@ The production default remains `score-only`. Brainstorm JSON/text output and dry
 
 ## Next Implementation Step
 
-Run the fixed six-prompt benchmark suite across the four iteration variants (`blind`, `score-only`, `own-reviews`, `full-visibility`) using the hidden `brainstorm --iteration-strategy` flag. Continue serializing OpenCode-backed calls with `--max-concurrent 1` until `todos/022` is fixed. Compare selector outputs and whole-panel metrics before promoting any variant to public UX.
+Run the fixed six-prompt benchmark suite across the four iteration variants (`blind`, `score-only`, `own-reviews`, `full-visibility`) using the hidden `brainstorm --iteration-strategy` flag. Prefer Pi-backed model routing for benchmark panels; if OpenCode-backed models are included from local config, serialize them with `--max-concurrent 1` until `todos/022` is fixed. Compare selector outputs and whole-panel metrics before promoting any variant to public UX.
 
 ## Verification
 
