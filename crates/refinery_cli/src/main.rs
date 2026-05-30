@@ -39,6 +39,9 @@ enum Command {
 
     /// Analyze brainstorm artifacts and compare panel selection strategies.
     BenchmarkBrainstorm(commands::benchmark_brainstorm::BenchmarkBrainstormArgs),
+
+    /// Create a blind review pack from brainstorm artifact panels.
+    ReviewBrainstormPanels(commands::review_brainstorm_panels::ReviewBrainstormPanelsArgs),
 }
 
 fn main() -> ExitCode {
@@ -73,5 +76,6 @@ async fn async_main() -> ExitCode {
         Command::Synthesize(args) => commands::synthesize::run(args).await,
         Command::Brainstorm(args) => commands::brainstorm::run(args).await,
         Command::BenchmarkBrainstorm(args) => commands::benchmark_brainstorm::run(&args),
+        Command::ReviewBrainstormPanels(args) => commands::review_brainstorm_panels::run(&args),
     }
 }

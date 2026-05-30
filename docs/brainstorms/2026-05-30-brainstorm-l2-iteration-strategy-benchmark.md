@@ -164,10 +164,23 @@ An initial Pi-backed concurrent run with `--max-concurrent 4` produced two class
 
 The clean benchmark used `--max-concurrent 1` and a 64MB bounded stdout capture. A future provider improvement should stream-parse Pi JSON events instead of retaining the whole event stream.
 
+## Blind Panel Review Pack
+
+Added `refinery review-brainstorm-panels` to generate a blind review packet from brainstorm artifact directories. The command hides iteration strategies and model IDs in the reviewer-facing output, while writing a separate JSON answer key for later analysis.
+
+Generated the L2 review pack for `score-only`, `own-reviews`, and `full-visibility` panels selected by `controversy_floor_7`:
+
+```text
+target/brainstorm-benchmark-2026-05-29-l2-pi-serial/logs/l2-panel-review-pack.md
+target/brainstorm-benchmark-2026-05-29-l2-pi-serial/logs/l2-panel-review-key.json
+```
+
+The Markdown packet asks reviewers to score each panel on useful diversity, non-overlap, novelty, actionability, coverage, overall panel value, and best-answer regret.
+
 ## Recommendations
 
-1. Do not promote `full-visibility` to the public default yet despite higher scores; first run whole-panel diversity review to check semantic convergence.
-2. Keep `score-only` as the production default for now because it preserves the strongest measured lexical diversity and matches the original brainstorm design goal.
-3. Manually or model-judge compare the saved `score-only`, `own-reviews`, and `full-visibility` panels on useful diversity, non-overlap, novelty, actionability, and best-answer regret.
+1. Use the blind review pack to compare `score-only`, `own-reviews`, and `full-visibility` without exposing strategy labels.
+2. Do not promote `full-visibility` to the public default yet despite higher scores; first check semantic convergence in the panel review.
+3. Keep `score-only` as the production default for now because it preserves the strongest measured lexical diversity and matches the original brainstorm design goal.
 4. Complete `todos/026-stream-parse-pi-json-events.md` to stream-parse Pi JSON mode, avoiding large transport buffers while preserving current event extraction.
 5. For L3 prompt-reframing work, use `score-only` as the default baseline and include `own-reviews` as the most interesting L2 challenger if budget allows.
