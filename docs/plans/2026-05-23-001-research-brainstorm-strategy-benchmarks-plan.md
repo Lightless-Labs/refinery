@@ -12,6 +12,7 @@ todo: 013-brainstorm-strategy-benchmarks
 **Reviewed:** 2026-05-31 (via `/coderabbit / review`)
 **Completed:** TBD
 **Addendum:** 2026-05-30 — L2 iteration strategy suite completed with Pi-backed model routing; see `docs/brainstorms/2026-05-30-brainstorm-l2-iteration-strategy-benchmark.md`.
+**Addendum:** 2026-05-30 — Added blind panel review pack generator (`refinery review-brainstorm-panels`) and generated the first L2 review packet.
 
 ## Context
 
@@ -168,7 +169,7 @@ Operationally, the clean Pi-backed suite needed `--max-concurrent 1` to avoid lo
 
 ## Next Implementation Step
 
-Perform whole-panel human or calibrated model-judge review over the L2 artifacts, focusing on useful diversity, non-overlap, novelty, actionability, and best-answer regret. Use that review to decide whether to expose `own-reviews` as an option, retain `score-only` only, or proceed directly to L3 prompt-reframing expansion (`todos/018`).
+Score the generated blind panel review pack, focusing on useful diversity, non-overlap, novelty, actionability, coverage, overall panel value, and best-answer regret. Use that review to decide whether to expose `own-reviews` as an option, retain `score-only` only, or proceed directly to L3 prompt-reframing expansion (`todos/018`).
 
 ## Verification
 
@@ -181,6 +182,7 @@ Completed:
 - Analyzer run against the two valid 2026-05-23 baseline artifacts and the later six-prompt suite.
 - Benchmark-only iteration variants implemented behind hidden CLI config.
 - L2 six-prompt suite run across `blind`, `score-only`, `own-reviews`, and `full-visibility`; analyzer outputs saved under `target/brainstorm-benchmark-2026-05-29-l2-pi-serial/logs/`.
+- Blind panel review pack generator added as `refinery review-brainstorm-panels`; L2 review pack and answer key generated under the same logs directory.
 - `cargo fmt --all -- --check`
 - `cargo test -p refinery_core brainstorm`
 - `cargo test -p refinery_cli`

@@ -135,6 +135,18 @@ The analyzer compares selector counterfactuals over final-round proposals and ev
 
 It reports panel quality, quality floor, evaluator disagreement, lexical overlap, and meta-preamble rate.
 
+For whole-panel review, generate a blind packet that hides iteration strategies and model IDs from reviewers while writing a separate answer key:
+
+```sh
+refinery review-brainstorm-panels $(cat run-dirs.txt) \
+  --strategies score-only,own-reviews,full-visibility \
+  --selector controversy-floor-7 \
+  --key-path panel-review-key.json \
+  > panel-review-pack.md
+```
+
+Use the review packet to score useful diversity, non-overlap, novelty, actionability, coverage, overall panel value, and best-answer regret.
+
 ## Planned Verbs
 
 | Verb | Status | Idea |
