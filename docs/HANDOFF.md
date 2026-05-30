@@ -2,7 +2,7 @@
 
 Current state of the project and active work. Read this at session start. Update before compaction or at natural breakpoints.
 
-**Last updated:** 2026-05-31
+**Last updated:** 2026-05-30
 
 ## Project State
 
@@ -39,13 +39,15 @@ See `memory/verb_architecture.md` for full taxonomy with consistent terminology.
 - **New XML tags in prompts need sanitizers.** See `docs/solutions/security-issues/prompt-injection-prevention-multi-model.md`.
 - **Rationale before score** in all eval schemas — autoregressive anti-manipulation measure.
 - **Float score coercion** — `as_u64().or_else(as_f64())` pattern for score parsing.
+- **Pi JSON event streams can be much larger than final text.** `tundish_providers::process` now allows 64MB captured stdout so benchmark-sized Pi responses do not trip the transport cap; a future improvement should stream-parse Pi JSON instead of retaining the full event stream.
 
 ## Open TODOs
 
 Check `todos/` for the full list. Key ones:
 
-- **013** — brainstorm strategy benchmarks (in progress): design, analyzer, six-prompt v0 suite, quality-floor follow-up, meta-preamble prompt polish, and benchmark-only iteration variants completed; next run six-prompt suite across variants using Pi-backed model routing where possible
+- **013** — brainstorm strategy benchmarks (in progress): design, analyzer, six-prompt v0 suite, quality-floor follow-up, meta-preamble prompt polish, benchmark-only iteration variants, and L2 six-prompt variant suite completed; next do whole-panel diversity review before changing defaults or moving to L3 prompt-reframing
 - **025** — optional brainstorm lineage-reference polish if softer phrases like "builds on..." feel too process-oriented in demos
+- **026** — stream-parse Pi JSON events instead of buffering full stdout; current 64MB cap is a benchmark unblocker, not the ideal provider implementation
 - **018** — brainstorm divergence expansion: each model reframes the initial prompt, all models work all prompt variants; optional future domain collisions
 - **021** — evaluate TOON (`toon-format/toon`) for prompt-facing artifact export / benchmark fixtures
 - **011** — evolve verb (designed, not started)
@@ -58,6 +60,7 @@ Triage pattern: fix P1/P2 with code, create TODOs for P3/nitpicks, reply to ever
 
 ## Recent Context
 
+- 2026-05-30 brainstorm L2 iteration strategy benchmark completed (`todos/013`, `docs/brainstorms/2026-05-30-brainstorm-l2-iteration-strategy-benchmark.md`): ran 24 clean Pi-backed runs (6 prompts × `blind`, `score-only`, `own-reviews`, `full-visibility`) with `pi/openai-codex/gpt-5.4:off`, `pi/zai/glm-5.1:off`, `pi/kimi-coding/kimi-k2-thinking:off`, and `pi/minimax/MiniMax-M2.7:off`. Used `--max-concurrent 1` to avoid Pi local config lock contention and raised bounded stdout capture from 1MB to 64MB because Pi JSON event streams can exceed 1MB. Analyzer outputs live under `target/brainstorm-benchmark-2026-05-29-l2-pi-serial/logs/` (`run-dirs-clean.txt`, `l2-analysis-clean.json`, `l2-analysis-clean.txt`). Current `controversy_floor_7` aggregate: `full-visibility` highest quality (`mean=8.204`, `min=7.944`) but highest lexical overlap (`0.132`); `score-only` lowest lexical overlap (`0.097`) but lower quality (`mean=7.889`); `own-reviews` middle-ground (`mean=8.019`, disagreement `0.517`). Recommendation: keep production default `score-only` until whole-panel diversity/human or calibrated model-judge review checks semantic convergence and best-answer regret. Verified with `cargo fmt --all -- --check`, `cargo test -p tundish_providers`, and `cargo clippy -p tundish_providers --all-targets -- -D warnings`.
 - 2026-05-31 PR #40 (`feat: add Pi provider and brainstorm benchmark variants`) passed final review/checks after follow-up commits. Addressed CodeRabbit/GHA feedback with nested `pi`/`opencode` model-spec validation, plan review-date refresh, and Clippy sort lint fixes; addressed Gemini feedback by comparing `ModelId` directly where compatible, accepting string evaluation scores, and preserving `USERPROFILE`; addressed Codex feedback by forwarding a whitelist of Pi credential/config env vars after `env_clear`. Final observed checks before merge: GitHub Actions Build/Check/Test passed, Buildkite build #31 passed, CodeRabbit approved. Local verification included `cargo fmt --all -- --check`, `cargo clippy --workspace -- -D warnings`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo build --workspace`, and `cargo test --workspace`.
 - 2026-05-26 Buildkite baked-image follow-up: PR #39 (`ci: use baked Linux ARM64 Buildkite image`) opened from fork branch `El-Fitz:chore/buildkite-baked-linux-image`. It switches `.buildkite/pipeline.yml` to Tart image `ci-linux-arm64-rust-bazel`, removes per-job apt/rustup bootstrap, keeps HOME/Cargo/Rustup normalization, and adds `/opt/cargo/bin` after review feedback. GitHub Actions checks passed. Buildkite did not appear as a PR check from the fork branch; the upstream Buildkite pipeline may still be using inline pipeline settings, so a maintainer should either update the Buildkite pipeline configuration to upload `.buildkite/pipeline.yml` from the repo or manually run/patch the Buildkite pipeline before merging.
 - 2026-05-26 Pi provider adapter added: `tundish_providers::pi::PiProvider` supports model specs like `pi/openai/gpt-5.4`, invokes `pi --mode json --no-session --no-context-files --model <provider/model>`, disables tools by default, preserves Pi local config via `HOME`, and extracts assistant text from Pi JSON event streams. Default provider features are now `codex`, `opencode`, and `pi`; `claude`/`gemini` are no longer default options. `opencode` remains supported for users with local OpenCode config, but benchmarks should prefer Pi routing. Docs and `.env.example` updated accordingly. Verified with `cargo test -p tundish_providers`, `cargo clippy -p tundish_providers --all-targets -- -D warnings`, `cargo test -p refinery_cli`, `cargo clippy -p refinery_cli --all-targets -- -D warnings`, and a manual `brainstorm --dry-run` using `pi/openai/gpt-5.4` + `opencode/...`.
@@ -90,6 +93,6 @@ Recommended order:
 
 1. If continuing Buildkite migration, review PR #39 and either trigger a real Buildkite run against `ci-linux-arm64-rust-bazel` or update the Buildkite pipeline settings to upload `.buildkite/pipeline.yml` from the repo so PR pipeline changes are exercised.
 2. Start from clean `main` and read this handoff plus the valid baseline in `docs/brainstorms/2026-05-23-brainstorm-smoke-baseline.md`.
-3. If continuing brainstorm strategy work, run the fixed six-prompt suite for the L2 iteration variants (`blind`, `score-only`, `own-reviews`, `full-visibility`) via hidden `brainstorm --iteration-strategy`, preferably with Pi-backed model specs (`pi/<provider>/<model>`), then compare analyzer metrics grouped by artifact `iteration_strategy`.
-4. If including multiple OpenCode-backed models from local config, use `--max-concurrent 1` and `--idle-timeout 480`; otherwise `todos/022` no longer blocks the main benchmark lane.
-5. Do not implement Open Collider-style domain collisions before benchmark budget constraints are explicit.
+3. If continuing brainstorm strategy work, review the L2 artifacts in `target/brainstorm-benchmark-2026-05-29-l2-pi-serial/` and perform whole-panel diversity review over `score-only`, `own-reviews`, and `full-visibility` before changing defaults.
+4. For future Pi-backed benchmark runs, use `--max-concurrent 1` unless Pi config locking is fixed; for OpenCode-backed models use `--max-concurrent 1` and `--idle-timeout 480` until `todos/022` is fixed.
+5. Do not implement Open Collider-style domain collisions before benchmark budget constraints are explicit; if moving to L3, start with prompt-reframing expansion from `todos/018`.

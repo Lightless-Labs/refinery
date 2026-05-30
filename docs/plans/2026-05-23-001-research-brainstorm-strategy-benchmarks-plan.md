@@ -11,6 +11,7 @@ todo: 013-brainstorm-strategy-benchmarks
 **Enhanced:** 2026-05-23 (via `/deepen-plan`)
 **Reviewed:** 2026-05-31 (via `/coderabbit / review`)
 **Completed:** TBD
+**Addendum:** 2026-05-30 — L2 iteration strategy suite completed with Pi-backed model routing; see `docs/brainstorms/2026-05-30-brainstorm-l2-iteration-strategy-benchmark.md`.
 
 ## Context
 
@@ -143,9 +144,31 @@ Added benchmark-only brainstorm iteration variants behind a hidden CLI flag:
 
 The production default remains `score-only`. Brainstorm JSON/text output and dry-run output now expose `iteration_strategy`. Artifact runs now write `metadata.json` with `iteration_strategy`, and `refinery benchmark-brainstorm` reads that metadata so benchmark outputs can group runs by iteration strategy. Evaluation artifacts now include `rationale` while remaining backwards compatible with the analyzer's score loading.
 
+### Completed 2026-05-30
+
+Ran the fixed six-prompt benchmark suite across all four L2 iteration variants with Pi-backed model routing:
+
+- `blind`
+- `score-only`
+- `own-reviews`
+- `full-visibility`
+
+Final clean comparison uses 24 non-degraded, peer-evaluated runs (6 prompts × 4 strategies). The current production-like `controversy_floor_7` selector showed:
+
+| Iteration strategy | Mean quality | Min quality | Disagreement | Lexical overlap |
+|---|---:|---:|---:|---:|
+| `blind` | 7.926 | 7.444 | 0.477 | 0.105 |
+| `score-only` | 7.889 | 7.500 | 0.464 | 0.097 |
+| `own-reviews` | 8.019 | 7.667 | 0.517 | 0.112 |
+| `full-visibility` | 8.204 | 7.944 | 0.431 | 0.132 |
+
+`full-visibility` had the highest score quality but also the highest lexical overlap, matching the expected conformity risk. `score-only` preserved the lowest lexical overlap and remains the recommended default until whole-panel diversity review says otherwise. `own-reviews` is the strongest middle-ground challenger.
+
+Operationally, the clean Pi-backed suite needed `--max-concurrent 1` to avoid local config lock contention and a larger bounded stdout capture because Pi JSON event streams can exceed 1MB while streaming normal benchmark-sized answers.
+
 ## Next Implementation Step
 
-Run the fixed six-prompt benchmark suite across the four iteration variants (`blind`, `score-only`, `own-reviews`, `full-visibility`) using the hidden `brainstorm --iteration-strategy` flag. Prefer Pi-backed model routing for benchmark panels; if OpenCode-backed models are included from local config, serialize them with `--max-concurrent 1` until `todos/022` is fixed. Compare selector outputs and whole-panel metrics before promoting any variant to public UX.
+Perform whole-panel human or calibrated model-judge review over the L2 artifacts, focusing on useful diversity, non-overlap, novelty, actionability, and best-answer regret. Use that review to decide whether to expose `own-reviews` as an option, retain `score-only` only, or proceed directly to L3 prompt-reframing expansion (`todos/018`).
 
 ## Verification
 
@@ -157,6 +180,7 @@ Completed:
 - Artifact analyzer implemented as `refinery benchmark-brainstorm`.
 - Analyzer run against the two valid 2026-05-23 baseline artifacts and the later six-prompt suite.
 - Benchmark-only iteration variants implemented behind hidden CLI config.
+- L2 six-prompt suite run across `blind`, `score-only`, `own-reviews`, and `full-visibility`; analyzer outputs saved under `target/brainstorm-benchmark-2026-05-29-l2-pi-serial/logs/`.
 - `cargo fmt --all -- --check`
 - `cargo test -p refinery_core brainstorm`
 - `cargo test -p refinery_cli`
