@@ -10,8 +10,12 @@ use tundish_core::error::ProviderError;
 use tundish_core::progress::ProgressFn;
 use tundish_core::types::{Message, ModelId, Role};
 
-/// Maximum response size in bytes (1MB).
-const MAX_RESPONSE_SIZE: usize = 1_000_000;
+/// Maximum captured stdout size in bytes (64MB).
+///
+/// JSON-event CLIs such as pi may emit substantially more transport data than
+/// the final assistant text because streamed message updates repeat context.
+/// Keep a bounded capture while allowing normal benchmark-sized responses.
+const MAX_RESPONSE_SIZE: usize = 64_000_000;
 
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 

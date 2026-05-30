@@ -4,7 +4,7 @@ priority: low
 milestone: v0.4
 depends_on: 004-verb-brainstorm
 status: in_progress
-updated: 2026-05-31
+updated: 2026-05-30
 ---
 
 # Benchmark: Brainstorm Iteration and Selection Strategies
@@ -16,6 +16,8 @@ updated: 2026-05-31
 **Phase 2 deliverable:** `refinery benchmark-brainstorm` artifact analyzer
 
 **Phase 3 deliverable:** `docs/brainstorms/2026-05-23-six-prompt-brainstorm-benchmark.md`
+
+**Phase 4 deliverable:** `docs/brainstorms/2026-05-30-brainstorm-l2-iteration-strategy-benchmark.md`
 
 ## Goal
 
@@ -94,9 +96,9 @@ Benchmark-only iteration variants are now implemented behind hidden/internal CLI
 
 The default production behavior remains score-only. Brainstorm outputs and artifact `metadata.json` now expose `iteration_strategy`, and `refinery benchmark-brainstorm` reads that metadata for grouping.
 
-Implementation PR #40 passed GitHub Actions, Buildkite, CodeRabbit, Gemini, and Codex review after follow-up fixes for nested model-spec validation, Clippy sort linting, string score parsing, Pi credential environment passthrough, and Windows `USERPROFILE` preservation.
+The fixed six-prompt suite has now been run for all four L2 variants with Pi-backed model routing. Clean result: 24 non-degraded, peer-evaluated runs. Aggregate `controversy_floor_7` view: `full-visibility` scored highest on mean/min quality but had highest lexical overlap; `score-only` had the lowest lexical overlap but lower judged quality; `own-reviews` is the most interesting middle-ground challenger. Keep production default as score-only until whole-panel diversity review validates whether full visibility's higher scores are worth the conformity risk.
 
-Next concrete step: run the fixed six-prompt suite for each variant using Pi-backed model routing where possible. If OpenCode-backed models are included from local config, serialize them with `--max-concurrent 1` until `todos/022` is fixed. Compare selectors (`mean`, `controversy`, `controversy_floor_7`, `quality_x_lexdiv`) and whole-panel metrics before promoting any variant to public UX.
+Next concrete step: perform whole-panel human or calibrated model-judge review over the saved L2 artifacts, focusing on useful diversity, non-overlap, novelty, actionability, and best-answer regret. After that, decide whether to pursue `own-reviews` as a public option or move to L3 prompt-reframing expansion (`todos/018`).
 
 ## References
 
