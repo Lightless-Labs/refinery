@@ -311,7 +311,7 @@ fn own_reviews_prompt(prompt: &str, history: Option<&Vec<BrainstormReviewHistory
             history_text.push_str("No peer evaluations were available for this answer.\n");
         } else {
             let mut reviews = entry.reviews.clone();
-            reviews.sort_by(|a, b| a.evaluator.to_string().cmp(&b.evaluator.to_string()));
+            reviews.sort_by_key(|review| review.evaluator.to_string());
             for review in reviews {
                 let evaluator = sanitize_brainstorm_context(&review.evaluator.to_string());
                 let rationale = sanitize_brainstorm_context(&review.rationale);
@@ -347,7 +347,7 @@ fn full_visibility_prompt(prompt: &str, history: &[BrainstormVisibilityRound]) -
     for round in history {
         let _ = writeln!(history_text, "<round number=\"{}\">", round.round);
         let mut proposals: Vec<(&ModelId, &String)> = round.proposals.iter().collect();
-        proposals.sort_by(|(a, _), (b, _)| a.to_string().cmp(&b.to_string()));
+        proposals.sort_by_key(|(id, _)| id.to_string());
         for (model_id, answer) in proposals {
             let model = sanitize_brainstorm_context(&model_id.to_string());
             let answer = sanitize_brainstorm_context(answer);
@@ -358,7 +358,7 @@ fn full_visibility_prompt(prompt: &str, history: &[BrainstormVisibilityRound]) -
 
             history_text.push_str("<evaluations>\n");
             let mut reviews = round.evaluations.get(model_id).cloned().unwrap_or_default();
-            reviews.sort_by(|a, b| a.evaluator.to_string().cmp(&b.evaluator.to_string()));
+            reviews.sort_by_key(|review| review.evaluator.to_string());
             for review in reviews {
                 let evaluator = sanitize_brainstorm_context(&review.evaluator.to_string());
                 let rationale = sanitize_brainstorm_context(&review.rationale);
