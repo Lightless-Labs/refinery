@@ -231,7 +231,12 @@ fn parse_brainstorm_evaluation_response(response: &str) -> Option<ParsedBrainsto
     #[allow(clippy::cast_precision_loss)]
     let score = parsed
         .get("score")
-        .and_then(|v| v.as_u64().map(|u| u as f64).or_else(|| v.as_f64()))
+        .and_then(|v| {
+            v.as_u64()
+                .map(|u| u as f64)
+                .or_else(|| v.as_f64())
+                .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+        })
         .filter(|score| (1.0..=10.0).contains(score))?;
     let rationale = parsed
         .get("rationale")
@@ -311,7 +316,7 @@ fn own_reviews_prompt(prompt: &str, history: Option<&Vec<BrainstormReviewHistory
             history_text.push_str("No peer evaluations were available for this answer.\n");
         } else {
             let mut reviews = entry.reviews.clone();
-            reviews.sort_by_key(|review| review.evaluator.to_string());
+            reviews.sort_by(|a, b| a.evaluator.cmp(&b.evaluator));
             for review in reviews {
                 let evaluator = sanitize_brainstorm_context(&review.evaluator.to_string());
                 let rationale = sanitize_brainstorm_context(&review.rationale);
@@ -347,7 +352,7 @@ fn full_visibility_prompt(prompt: &str, history: &[BrainstormVisibilityRound]) -
     for round in history {
         let _ = writeln!(history_text, "<round number=\"{}\">", round.round);
         let mut proposals: Vec<(&ModelId, &String)> = round.proposals.iter().collect();
-        proposals.sort_by_key(|(id, _)| id.to_string());
+        proposals.sort_by(|(a, _), (b, _)| a.cmp(b));
         for (model_id, answer) in proposals {
             let model = sanitize_brainstorm_context(&model_id.to_string());
             let answer = sanitize_brainstorm_context(answer);
@@ -358,7 +363,7 @@ fn full_visibility_prompt(prompt: &str, history: &[BrainstormVisibilityRound]) -
 
             history_text.push_str("<evaluations>\n");
             let mut reviews = round.evaluations.get(model_id).cloned().unwrap_or_default();
-            reviews.sort_by_key(|review| review.evaluator.to_string());
+            reviews.sort_by(|a, b| a.evaluator.cmp(&b.evaluator));
             for review in reviews {
                 let evaluator = sanitize_brainstorm_context(&review.evaluator.to_string());
                 let rationale = sanitize_brainstorm_context(&review.rationale);
@@ -1024,6 +1029,16 @@ mod tests {
             quality_floor: None,
             output_dir: None,
         }
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_accepts_string_score() {
+        let parsed =
+            parse_brainstorm_evaluation_response(r#"{"rationale":"good tension","score":"8.5"}"#)
+                .expect("string score should parse");
+
+        assert!((parsed.score - 8.5).abs() < f64::EPSILON);
+        assert_eq!(parsed.rationale, "good tension");
     }
 
     #[test]

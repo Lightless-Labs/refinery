@@ -106,19 +106,16 @@ impl ModelProvider for PiProvider {
         let args = self.build_args(&system_prompt, &user_prompt);
         let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
 
-        // pi manages credentials in local config. Preserve HOME and disable pi's
-        // startup update/telemetry network calls without disabling model traffic.
-        let home = std::env::var("HOME").ok();
-        let mut env_vars: Vec<(&str, &str)> =
-            vec![("PI_SKIP_VERSION_CHECK", "1"), ("PI_TELEMETRY", "0")];
-        if let Some(ref h) = home {
-            env_vars.push(("HOME", h.as_str()));
-        }
+        let env_vars = pi_env_vars();
+        let env_var_refs: Vec<(&str, &str)> = env_vars
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
 
         let output = process::spawn_cli(
             &self.binary_path,
             &args_refs,
-            &env_vars,
+            &env_var_refs,
             self.max_timeout,
             self.idle_timeout,
             &self.model_id,
@@ -133,6 +130,66 @@ impl ModelProvider for PiProvider {
         &self.model_id
     }
 }
+
+fn pi_env_vars() -> Vec<(String, String)> {
+    let mut env_vars = vec![
+        ("PI_SKIP_VERSION_CHECK".to_string(), "1".to_string()),
+        ("PI_TELEMETRY".to_string(), "0".to_string()),
+    ];
+
+    for key in PI_PASSTHROUGH_ENV {
+        if let Ok(value) = std::env::var(key) {
+            if !value.is_empty() {
+                env_vars.push(((*key).to_string(), value));
+            }
+        }
+    }
+
+    env_vars
+}
+
+const PI_PASSTHROUGH_ENV: &[&str] = &[
+    "HOME",
+    "USERPROFILE",
+    "PI_CODING_AGENT_DIR",
+    "PI_CODING_AGENT_SESSION_DIR",
+    "PI_PACKAGE_DIR",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_OAUTH_TOKEN",
+    "OPENAI_API_KEY",
+    "AZURE_OPENAI_API_KEY",
+    "AZURE_OPENAI_BASE_URL",
+    "AZURE_OPENAI_RESOURCE_NAME",
+    "AZURE_OPENAI_API_VERSION",
+    "AZURE_OPENAI_DEPLOYMENT_NAME_MAP",
+    "DEEPSEEK_API_KEY",
+    "GEMINI_API_KEY",
+    "GROQ_API_KEY",
+    "CEREBRAS_API_KEY",
+    "XAI_API_KEY",
+    "FIREWORKS_API_KEY",
+    "TOGETHER_API_KEY",
+    "OPENROUTER_API_KEY",
+    "AI_GATEWAY_API_KEY",
+    "ZAI_API_KEY",
+    "MISTRAL_API_KEY",
+    "MINIMAX_API_KEY",
+    "MOONSHOT_API_KEY",
+    "OPENCODE_API_KEY",
+    "KIMI_API_KEY",
+    "CLOUDFLARE_API_KEY",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_GATEWAY_ID",
+    "XIAOMI_API_KEY",
+    "XIAOMI_TOKEN_PLAN_CN_API_KEY",
+    "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
+    "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
+    "AWS_PROFILE",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_BEARER_TOKEN_BEDROCK",
+    "AWS_REGION",
+];
 
 /// Extract the assistant response text from pi's `--mode json` JSONL stream.
 pub fn extract_pi_response(jsonl: &str, model_id: &ModelId) -> Result<String, ProviderError> {
