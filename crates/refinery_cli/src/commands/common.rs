@@ -297,6 +297,18 @@ pub fn parse_model_spec(input: &str) -> Result<ModelId, String> {
         if provider.is_empty() || model.is_empty() {
             return Err(format!("Invalid model spec: '{input}'"));
         }
+        if matches!(provider, "pi" | "opencode") {
+            let Some((subprovider, submodel)) = model.split_once('/') else {
+                return Err(format!(
+                    "Provider '{provider}' requires '<sub-provider>/<model>', got '{input}'"
+                ));
+            };
+            if subprovider.is_empty() || submodel.is_empty() {
+                return Err(format!(
+                    "Provider '{provider}' requires '<sub-provider>/<model>', got '{input}'"
+                ));
+            }
+        }
         Ok(ModelId::from_parts(provider, model))
     } else {
         match input {
@@ -535,6 +547,16 @@ mod tests {
         let model = parse_model_spec("pi/openai/gpt-5.4").unwrap();
         assert_eq!(model.provider(), "pi");
         assert_eq!(model.model(), "openai/gpt-5.4");
+    }
+
+    #[test]
+    fn parse_model_spec_rejects_malformed_nested_provider_paths() {
+        assert!(parse_model_spec("pi//gpt-5.4").is_err());
+        assert!(parse_model_spec("pi/openai/").is_err());
+        assert!(parse_model_spec("pi/gpt-5.4").is_err());
+        assert!(parse_model_spec("opencode//glm-5").is_err());
+        assert!(parse_model_spec("opencode/zai-coding-plan/").is_err());
+        assert!(parse_model_spec("opencode/glm-5").is_err());
     }
 
     #[test]
