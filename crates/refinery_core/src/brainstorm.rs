@@ -352,7 +352,7 @@ fn full_visibility_prompt(prompt: &str, history: &[BrainstormVisibilityRound]) -
     for round in history {
         let _ = writeln!(history_text, "<round number=\"{}\">", round.round);
         let mut proposals: Vec<(&ModelId, &String)> = round.proposals.iter().collect();
-        proposals.sort_by(|(a, _), (b, _)| a.cmp(b));
+        proposals.sort_by_key(|(id, _)| *id);
         for (model_id, answer) in proposals {
             let model = sanitize_brainstorm_context(&model_id.to_string());
             let answer = sanitize_brainstorm_context(answer);
