@@ -4,7 +4,7 @@ priority: low
 milestone: v0.4
 depends_on: 004-verb-brainstorm
 status: in_progress
-updated: 2026-05-26
+updated: 2026-05-31
 ---
 
 # Benchmark: Brainstorm Iteration and Selection Strategies
@@ -93,6 +93,8 @@ Benchmark-only iteration variants are now implemented behind hidden/internal CLI
 - `full-visibility` — all prior answers plus peer scores and rationales.
 
 The default production behavior remains score-only. Brainstorm outputs and artifact `metadata.json` now expose `iteration_strategy`, and `refinery benchmark-brainstorm` reads that metadata for grouping.
+
+Implementation PR #40 passed GitHub Actions, Buildkite, CodeRabbit, Gemini, and Codex review after follow-up fixes for nested model-spec validation, Clippy sort linting, string score parsing, Pi credential environment passthrough, and Windows `USERPROFILE` preservation.
 
 Next concrete step: run the fixed six-prompt suite for each variant using Pi-backed model routing where possible. If OpenCode-backed models are included from local config, serialize them with `--max-concurrent 1` until `todos/022` is fixed. Compare selectors (`mean`, `controversy`, `controversy_floor_7`, `quality_x_lexdiv`) and whole-panel metrics before promoting any variant to public UX.
 
