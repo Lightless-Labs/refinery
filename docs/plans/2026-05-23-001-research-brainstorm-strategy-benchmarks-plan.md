@@ -13,6 +13,7 @@ todo: 013-brainstorm-strategy-benchmarks
 **Completed:** TBD
 **Addendum:** 2026-05-30 — L2 iteration strategy suite completed with Pi-backed model routing; see `docs/brainstorms/2026-05-30-brainstorm-l2-iteration-strategy-benchmark.md`.
 **Addendum:** 2026-05-30 — Added blind panel review pack generator (`refinery review-brainstorm-panels`) and generated the first L2 review packet.
+**Addendum:** 2026-06-01 — Completed first-pass qualitative L2 panel review; see `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md`.
 
 ## Context
 
@@ -167,9 +168,15 @@ Final clean comparison uses 24 non-degraded, peer-evaluated runs (6 prompts × 4
 
 Operationally, the clean Pi-backed suite needed `--max-concurrent 1` to avoid local config lock contention and a larger bounded stdout capture because Pi JSON event streams can exceed 1MB while streaming normal benchmark-sized answers.
 
+### Completed 2026-06-01
+
+Completed a first-pass qualitative panel review using the generated blind L2 review pack. The review compared `score-only`, `own-reviews`, and `full-visibility` panels on useful diversity, non-overlap, novelty, actionability, coverage, overall panel value, and best-answer regret.
+
+Result: `score-only` remained strongest on useful diversity/non-overlap; `full-visibility` was strongest on actionability/coverage; `own-reviews` did not dominate overall but produced the strongest debugging/process panel. The review does not justify changing the production default away from `score-only` yet. Treat `score-only` as the L3 baseline, include `own-reviews` as an optional challenger if budget allows, and defer public exposure of iteration strategy variants until stronger human/calibrated judge evidence exists.
+
 ## Next Implementation Step
 
-Score the generated blind panel review pack, focusing on useful diversity, non-overlap, novelty, actionability, coverage, overall panel value, and best-answer regret. Use that review to decide whether to expose `own-reviews` as an option, retain `score-only` only, or proceed directly to L3 prompt-reframing expansion (`todos/018`).
+Continue `todos/013` with either a human/calibrated model-judge pass over `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md` or move to L3 prompt-reframing expansion planning in `todos/018`. Do not change the production default based on the first-pass review alone.
 
 ## Verification
 
@@ -183,6 +190,7 @@ Completed:
 - Benchmark-only iteration variants implemented behind hidden CLI config.
 - L2 six-prompt suite run across `blind`, `score-only`, `own-reviews`, and `full-visibility`; analyzer outputs saved under `target/brainstorm-benchmark-2026-05-29-l2-pi-serial/logs/`.
 - Blind panel review pack generator added as `refinery review-brainstorm-panels`; L2 review pack and answer key generated under the same logs directory.
+- First-pass L2 panel review documented in `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md`.
 - `cargo fmt --all -- --check`
 - `cargo test -p refinery_core brainstorm`
 - `cargo test -p refinery_cli`
