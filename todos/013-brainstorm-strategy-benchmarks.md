@@ -4,7 +4,7 @@ priority: low
 milestone: v0.4
 depends_on: 004-verb-brainstorm
 status: in_progress
-updated: 2026-05-30
+updated: 2026-06-01
 ---
 
 # Benchmark: Brainstorm Iteration and Selection Strategies
@@ -18,6 +18,8 @@ updated: 2026-05-30
 **Phase 3 deliverable:** `docs/brainstorms/2026-05-23-six-prompt-brainstorm-benchmark.md`
 
 **Phase 4 deliverable:** `docs/brainstorms/2026-05-30-brainstorm-l2-iteration-strategy-benchmark.md`
+
+**Phase 5 deliverable:** `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md`
 
 ## Goal
 
@@ -96,9 +98,11 @@ Benchmark-only iteration variants are now implemented behind hidden/internal CLI
 
 The default production behavior remains score-only. Brainstorm outputs and artifact `metadata.json` now expose `iteration_strategy`, and `refinery benchmark-brainstorm` reads that metadata for grouping.
 
-The fixed six-prompt suite has now been run for all four L2 variants with Pi-backed model routing. Clean result: 24 non-degraded, peer-evaluated runs. Aggregate `controversy_floor_7` view: `full-visibility` scored highest on mean/min quality but had highest lexical overlap; `score-only` had the lowest lexical overlap but lower judged quality; `own-reviews` is the most interesting middle-ground challenger. Keep production default as score-only until whole-panel diversity review validates whether full visibility's higher scores are worth the conformity risk.
+The fixed six-prompt suite has now been run for all four L2 variants with Pi-backed model routing. Clean result: 24 non-degraded, peer-evaluated runs. Aggregate `controversy_floor_7` view: `full-visibility` scored highest on mean/min quality but had highest lexical overlap; `score-only` had the lowest lexical overlap but lower judged quality; `own-reviews` is the most interesting middle-ground challenger.
 
-Next concrete step: perform whole-panel human or calibrated model-judge review over the saved L2 artifacts, focusing on useful diversity, non-overlap, novelty, actionability, and best-answer regret. After that, decide whether to pursue `own-reviews` as a public option or move to L3 prompt-reframing expansion (`todos/018`).
+A first-pass qualitative review over the generated blind panel review pack is complete. Result: `score-only` still looked strongest on useful diversity and non-overlap; `full-visibility` looked strongest on actionability and coverage; `own-reviews` did not dominate globally but produced the strongest debugging/process panel. Keep production default as `score-only` until stronger human/calibrated model-judge evidence says otherwise.
+
+Next concrete step: either run a human/calibrated model-judge pass over the L2 panel review findings, or move to L3 prompt-reframing expansion planning in `todos/018` with `score-only` as the baseline and `own-reviews` as an optional challenger if budget allows.
 
 ## References
 

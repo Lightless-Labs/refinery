@@ -177,6 +177,8 @@ target/brainstorm-benchmark-2026-05-29-l2-pi-serial/logs/l2-panel-review-key.jso
 
 The Markdown packet asks reviewers to score each panel on useful diversity, non-overlap, novelty, actionability, coverage, overall panel value, and best-answer regret.
 
+A first-pass qualitative review is documented in `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md`. It found `score-only` strongest on useful diversity/non-overlap and `full-visibility` strongest on actionability/coverage, with no justification to change the production default yet.
+
 ## Recommendations
 
 1. Use the blind review pack to compare `score-only`, `own-reviews`, and `full-visibility` without exposing strategy labels.
