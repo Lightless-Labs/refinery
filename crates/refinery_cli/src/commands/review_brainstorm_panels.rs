@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use clap::{Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
 
-use refinery_core::prompts::extract_json;
+use refinery_core::brainstorm::BrainstormIterationStrategy;
 use refinery_core::scoring;
 use refinery_core::types::ModelId;
 
@@ -77,7 +77,7 @@ struct Candidate {
 struct LoadedRun {
     run_dir: PathBuf,
     prompt_id: String,
-    iteration_strategy: String,
+    iteration_strategy: BrainstormIterationStrategy,
     panel: Vec<Candidate>,
 }
 
@@ -163,7 +163,13 @@ pub fn run(args: &ReviewBrainstormPanelsArgs) -> ExitCode {
         }
     };
 
-    let strategy_filter: BTreeSet<String> = args.strategies.iter().cloned().collect();
+    let strategy_filter = match parse_iteration_strategies(&args.strategies) {
+        Ok(strategies) => strategies,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return ExitCode::from(4);
+        }
+    };
     let mut runs = Vec::new();
     for run_dir in &args.run_dirs {
         match load_run(run_dir, args.selector, args.panel_size as usize) {
@@ -229,8 +235,20 @@ fn parse_prompt_texts(values: &[String]) -> Result<BTreeMap<String, String>, Str
     Ok(parsed)
 }
 
+fn parse_iteration_strategies(
+    values: &[String],
+) -> Result<Vec<BrainstormIterationStrategy>, String> {
+    values
+        .iter()
+        .map(|value| value.parse::<BrainstormIterationStrategy>())
+        .collect()
+}
+
 fn write_answer_key(path: &Path, key: &ReviewAnswerKey) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create {}: {e}", parent.display()))?;
     }
@@ -254,7 +272,9 @@ fn load_run(
     let metadata = load_run_metadata(run_dir)?;
     let iteration_strategy = metadata
         .and_then(|metadata| metadata.iteration_strategy)
-        .ok_or_else(|| "run metadata missing iteration_strategy".to_string())?;
+        .ok_or_else(|| "run metadata missing iteration_strategy".to_string())?
+        .parse::<BrainstormIterationStrategy>()
+        .map_err(|e| format!("invalid run metadata iteration_strategy: {e}"))?;
     let prompt_id = prompt_id_from_run_dir(run_dir);
 
     Ok(LoadedRun {
@@ -340,7 +360,7 @@ fn load_candidates(round_dir: &Path) -> Result<Vec<Candidate>, String> {
                     proposal_path.display()
                 )
             })?;
-            let answer = proposal_answer_text(&proposal);
+            let answer = proposal;
             let mean_score = scoring::mean(&score_values);
             let stddev = scoring::stddev(&score_values, mean_score);
             let controversy_score = scoring::controversy_score(&score_values);
@@ -353,69 +373,6 @@ fn load_candidates(round_dir: &Path) -> Result<Vec<Candidate>, String> {
             })
         })
         .collect()
-}
-
-fn proposal_answer_text(proposal: &str) -> String {
-    let candidates = proposal_json_candidates(proposal);
-    candidates
-        .iter()
-        .find_map(|json| {
-            serde_json::from_str::<serde_json::Value>(json)
-                .ok()
-                .and_then(|value| {
-                    value
-                        .get("answer")
-                        .and_then(|answer| answer.as_str())
-                        .map(str::to_string)
-                })
-        })
-        .or_else(|| {
-            candidates
-                .iter()
-                .find_map(|candidate| malformed_answer_wrapper(candidate))
-        })
-        .unwrap_or_else(|| proposal.to_string())
-}
-
-fn malformed_answer_wrapper(candidate: &str) -> Option<String> {
-    let trimmed = candidate.trim();
-    let marker_start = trimmed.rfind("\"answer\"")?;
-    let after_marker = trimmed[marker_start + "\"answer\"".len()..].trim_start();
-    let after_colon = after_marker.strip_prefix(':')?.trim_start();
-    let inner = after_colon
-        .strip_prefix('"')?
-        .trim_end()
-        .strip_suffix('}')?
-        .trim_end()
-        .strip_suffix('"')?;
-    Some(
-        inner
-            .replace("\\n", "\n")
-            .replace("\\\"", "\"")
-            .replace("\\\\", "\\"),
-    )
-}
-
-fn proposal_json_candidates(proposal: &str) -> Vec<&str> {
-    let mut candidates = Vec::new();
-    let trimmed = proposal.trim();
-
-    // Pi responses can wrap a JSON object in a markdown JSON fence while the
-    // JSON string itself contains markdown fences. The shared extract_json()
-    // helper intentionally stops at the first closing fence, so first try a
-    // last-fence interpretation for proposal artifacts.
-    if let Some(after_opening_fence) = trimmed.strip_prefix("```json") {
-        let after_opening_fence = after_opening_fence.trim_start();
-        if let Some(end) = after_opening_fence.rfind("```") {
-            candidates.push(after_opening_fence[..end].trim());
-        }
-    }
-
-    if let Some(json) = extract_json(proposal) {
-        candidates.push(json);
-    }
-    candidates.push(trimmed);
-    candidates
 }
 
 fn select_panel(
@@ -585,9 +542,13 @@ fn build_review_pack(
 
     for (prompt_id, mut prompt_runs) in grouped {
         prompt_runs.sort_by(|a, b| {
-            blind_sort_key(&prompt_id, &a.iteration_strategy)
-                .cmp(&blind_sort_key(&prompt_id, &b.iteration_strategy))
-                .then_with(|| a.iteration_strategy.cmp(&b.iteration_strategy))
+            blind_sort_key(&prompt_id, a.iteration_strategy)
+                .cmp(&blind_sort_key(&prompt_id, b.iteration_strategy))
+                .then_with(|| {
+                    a.iteration_strategy
+                        .as_str()
+                        .cmp(b.iteration_strategy.as_str())
+                })
         });
 
         let mut panels = Vec::new();
@@ -621,7 +582,7 @@ fn build_review_pack(
             });
             key_panels.push(PanelAnswerKey {
                 label: panel_label,
-                iteration_strategy: run.iteration_strategy,
+                iteration_strategy: run.iteration_strategy.as_str().to_string(),
                 run_dir: run.run_dir.display().to_string(),
                 answers: key_answers,
             });
@@ -651,10 +612,14 @@ fn build_review_pack(
     )
 }
 
-fn blind_sort_key(prompt_id: &str, strategy: &str) -> u64 {
+fn blind_sort_key(prompt_id: &str, strategy: BrainstormIterationStrategy) -> u64 {
     // FNV-1a for deterministic label shuffling without adding a dependency.
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-    for byte in prompt_id.bytes().chain([b'|']).chain(strategy.bytes()) {
+    for byte in prompt_id
+        .bytes()
+        .chain([b'|'])
+        .chain(strategy.as_str().bytes())
+    {
         hash ^= u64::from(byte);
         hash = hash.wrapping_mul(0x0100_0000_01b3);
     }
@@ -745,28 +710,27 @@ mod tests {
     }
 
     #[test]
-    fn proposal_answer_text_extracts_fenced_json_answer() {
-        let proposal = "```json\n{\"answer\":\"Actual answer\"}\n```";
-        assert_eq!(proposal_answer_text(proposal), "Actual answer");
+    fn parse_iteration_strategies_rejects_unknown_values() {
+        let parsed = parse_iteration_strategies(&["score-only".to_string()]).unwrap();
+        assert_eq!(parsed, vec![BrainstormIterationStrategy::ScoreOnly]);
+        assert!(parse_iteration_strategies(&["score_only".to_string()]).is_err());
     }
 
     #[test]
-    fn proposal_answer_text_handles_nested_markdown_fences_inside_json_string() {
-        let proposal =
-            "```json\n{\"answer\":\"Use this snippet:\\n\\n```rust\\nfn main() {}\\n```\"}\n```";
-        assert_eq!(
-            proposal_answer_text(proposal),
-            "Use this snippet:\n\n```rust\nfn main() {}\n```"
-        );
-    }
+    fn write_answer_key_accepts_bare_filename_path() {
+        let path = PathBuf::from(format!(
+            "review-brainstorm-panels-key-{}.json",
+            std::process::id()
+        ));
+        let key = ReviewAnswerKey {
+            selector: "controversy_floor_7".to_string(),
+            prompts: Vec::new(),
+        };
 
-    #[test]
-    fn proposal_answer_text_handles_malformed_multiline_answer_wrapper() {
-        let proposal = "```json\n{\"answer\":\"First line\nSecond line with \\\"quote\\\"\"}\n```";
-        assert_eq!(
-            proposal_answer_text(proposal),
-            "First line\nSecond line with \"quote\""
-        );
+        write_answer_key(&path, &key).unwrap();
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.contains("controversy_floor_7"));
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -792,7 +756,7 @@ mod tests {
         LoadedRun {
             run_dir: PathBuf::from(format!("target/{strategy}/{prompt_id}/run")),
             prompt_id: prompt_id.to_string(),
-            iteration_strategy: strategy.to_string(),
+            iteration_strategy: strategy.parse().unwrap(),
             panel: vec![Candidate {
                 model_id: ModelId::new("test/model"),
                 answer: answer.to_string(),
