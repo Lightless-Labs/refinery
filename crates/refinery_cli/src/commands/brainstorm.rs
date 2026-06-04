@@ -5,8 +5,8 @@ use clap::Parser;
 use serde::Serialize;
 
 use refinery_core::brainstorm::{
-    BrainstormConfig, BrainstormError, BrainstormIterationStrategy, BrainstormProviderFailure,
-    BrainstormResult,
+    BrainstormConfig, BrainstormError, BrainstormIterationStrategy,
+    BrainstormPromptVariantStrategy, BrainstormProviderFailure, BrainstormResult,
 };
 use refinery_core::types::ModelId;
 
@@ -35,6 +35,10 @@ pub struct BrainstormArgs {
     /// Experimental brainstorm iteration strategy for benchmark runs.
     #[arg(long, default_value = "score-only", hide = true)]
     iteration_strategy: BrainstormIterationStrategy,
+
+    /// Experimental upstream prompt-variant expansion for benchmark runs.
+    #[arg(long, default_value = "off", hide = true)]
+    prompt_variants: BrainstormPromptVariantStrategy,
 }
 
 // ── JSON output types ───────────────────────────────────────────────────
@@ -46,6 +50,8 @@ struct BrainstormJsonOutput {
     evaluation_status: String,
     selection_strategy: String,
     iteration_strategy: String,
+    prompt_variant_strategy: String,
+    prompt_variant_count: usize,
     panel: Vec<PanelAnswerOutput>,
     provider_failures: Vec<ProviderFailureOutput>,
     metadata: MetadataOutput,
@@ -118,6 +124,80 @@ fn emit_config_error(shared: &SharedArgs, message: &str) -> ExitCode {
     ExitCode::from(4)
 }
 
+fn emit_dry_run(
+    shared: &SharedArgs,
+    args: &BrainstormArgs,
+    selection_strategy: String,
+) -> ExitCode {
+    let model_ids: Vec<ModelId> = match shared
+        .models
+        .iter()
+        .map(|m| super::common::parse_model_spec(m))
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(ids) => ids,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return ExitCode::from(4);
+        }
+    };
+    let n = model_ids.len();
+    if n == 0 {
+        eprintln!("Error: at least one model must be specified with --models");
+        return ExitCode::from(4);
+    }
+
+    let prompt_variant_count = match args.prompt_variants {
+        BrainstormPromptVariantStrategy::Off => 1,
+        BrainstormPromptVariantStrategy::PerModel => n + 1,
+    };
+    let variant_calls = match args.prompt_variants {
+        BrainstormPromptVariantStrategy::Off => 0,
+        BrainstormPromptVariantStrategy::PerModel => n,
+    };
+    let lineages = n * prompt_variant_count;
+    #[allow(clippy::cast_possible_truncation)]
+    let calls_per_round = (lineages + lineages * n.saturating_sub(1)) as u32;
+    #[allow(clippy::cast_possible_truncation)]
+    let total = variant_calls as u32 + calls_per_round * args.max_rounds;
+
+    if matches!(shared.output_format, OutputFormat::Json) {
+        return emit_dry_run_json(&DryRunOutput {
+            status: "dry_run".to_string(),
+            verb: "brainstorm".to_string(),
+            models: n,
+            max_rounds: Some(args.max_rounds),
+            converge_rounds: None,
+            calls_per_round: Some(calls_per_round),
+            converge_calls: None,
+            synthesis_calls: None,
+            total_calls: total,
+            panel_size: Some(args.panel_size),
+            selection_strategy: Some(selection_strategy),
+            iteration_strategy: Some(args.iteration_strategy.as_str().to_string()),
+            prompt_variant_strategy: Some(args.prompt_variants.as_str().to_string()),
+            warning: None,
+        });
+    }
+
+    println!("Dry run estimate:");
+    println!("  Models: {n}");
+    println!(
+        "  Prompt variant strategy: {}",
+        args.prompt_variants.as_str()
+    );
+    println!("  Prompt variants: {prompt_variant_count}");
+    println!("  Lineages: {lineages}");
+    println!("  Max rounds: {}", args.max_rounds);
+    println!("  Variant calls: {variant_calls}");
+    println!("  Calls per round: {calls_per_round}");
+    println!("  Total calls (max): {total}");
+    println!("  Panel size: {}", args.panel_size);
+    println!("  Selection strategy: {selection_strategy}");
+    println!("  Iteration strategy: {}", args.iteration_strategy.as_str());
+    ExitCode::SUCCESS
+}
+
 // ── Main entry point ────────────────────────────────────────────────────
 
 pub async fn run(args: BrainstormArgs) -> ExitCode {
@@ -132,52 +212,7 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
 
     // Dry run: estimate calls without resolving prompt or building providers
     if shared.dry_run {
-        let model_ids: Vec<ModelId> = match shared
-            .models
-            .iter()
-            .map(|m| super::common::parse_model_spec(m))
-            .collect::<Result<Vec<_>, _>>()
-        {
-            Ok(ids) => ids,
-            Err(e) => {
-                eprintln!("Error: {e}");
-                return ExitCode::from(4);
-            }
-        };
-        let n = model_ids.len();
-        if n == 0 {
-            eprintln!("Error: at least one model must be specified with --models");
-            return ExitCode::from(4);
-        }
-        #[allow(clippy::cast_possible_truncation)]
-        let calls_per_round = (n + n * (n - 1)) as u32;
-        let total = calls_per_round * args.max_rounds;
-        if matches!(shared.output_format, OutputFormat::Json) {
-            return emit_dry_run_json(&DryRunOutput {
-                status: "dry_run".to_string(),
-                verb: "brainstorm".to_string(),
-                models: n,
-                max_rounds: Some(args.max_rounds),
-                converge_rounds: None,
-                calls_per_round: Some(calls_per_round),
-                converge_calls: None,
-                synthesis_calls: None,
-                total_calls: total,
-                panel_size: Some(args.panel_size),
-                selection_strategy: Some(selection_strategy),
-                iteration_strategy: Some(args.iteration_strategy.as_str().to_string()),
-                warning: None,
-            });
-        }
-        println!("Dry run estimate:");
-        println!("  Models: {n}");
-        println!("  Max rounds: {}", args.max_rounds);
-        println!("  Calls per round: {calls_per_round}");
-        println!("  Total calls (max): {total}");
-        println!("  Panel size: {}", args.panel_size);
-        println!("  Selection strategy: {selection_strategy}");
-        println!("  Iteration strategy: {}", args.iteration_strategy.as_str());
-        return ExitCode::SUCCESS;
+        return emit_dry_run(shared, &args, selection_strategy);
     }
 
     let prompt = match resolve_prompt(shared) {
@@ -204,6 +239,7 @@ pub async fn run(args: BrainstormArgs) -> ExitCode {
         max_concurrent: shared.max_concurrent,
         timeout: Duration::from_secs(shared.timeout),
         iteration_strategy: args.iteration_strategy,
+        prompt_variant_strategy: args.prompt_variants,
         quality_floor,
         output_dir,
     };
@@ -250,6 +286,8 @@ fn emit_json_success(result: &BrainstormResult, elapsed: std::time::Duration) ->
         evaluation_status: result.evaluation_status.as_str().to_string(),
         selection_strategy: result.selection_strategy.clone(),
         iteration_strategy: result.iteration_strategy.as_str().to_string(),
+        prompt_variant_strategy: result.prompt_variant_strategy.as_str().to_string(),
+        prompt_variant_count: result.prompt_variants.len(),
         panel: result
             .panel
             .iter()
@@ -310,6 +348,11 @@ fn emit_text_success(result: &BrainstormResult, elapsed: std::time::Duration) {
     println!("Evaluation status: {}", result.evaluation_status.as_str());
     println!("Selection strategy: {}", result.selection_strategy);
     println!("Iteration strategy: {}", result.iteration_strategy.as_str());
+    println!(
+        "Prompt variant strategy: {} ({} variants)",
+        result.prompt_variant_strategy.as_str(),
+        result.prompt_variants.len()
+    );
     println!("Elapsed: {elapsed:?}");
     if !result.provider_failures.is_empty() {
         println!("\n── Provider failures ──");
