@@ -112,7 +112,8 @@ impl ModelProvider for PiProvider {
             .map(|(key, value)| (key.as_str(), value.as_str()))
             .collect();
 
-        let output = process::spawn_cli(
+        let mut parser = PiResponseParser::new(&self.model_id);
+        process::spawn_cli_stream_lines(
             &self.binary_path,
             &args_refs,
             &env_var_refs,
@@ -120,10 +121,11 @@ impl ModelProvider for PiProvider {
             self.idle_timeout,
             &self.model_id,
             self.progress.clone(),
+            |line| parser.observe_line(line),
         )
         .await?;
 
-        extract_pi_response(&output, &self.model_id)
+        parser.finish()
     }
 
     fn model_id(&self) -> &ModelId {
@@ -193,23 +195,47 @@ const PI_PASSTHROUGH_ENV: &[&str] = &[
 
 /// Extract the assistant response text from pi's `--mode json` JSONL stream.
 pub fn extract_pi_response(jsonl: &str, model_id: &ModelId) -> Result<String, ProviderError> {
-    let model = model_id.clone();
-    let preview: String = jsonl.chars().take(200).collect();
-    let mut latest_message_text: Option<String> = None;
-    let mut delta_text = String::new();
-
+    let mut parser = PiResponseParser::new(model_id);
     for line in jsonl.lines() {
+        parser.observe_line(line)?;
+    }
+    parser.finish()
+}
+
+struct PiResponseParser {
+    model: ModelId,
+    preview: String,
+    latest_message_text: Option<String>,
+    delta_text: String,
+}
+
+impl PiResponseParser {
+    fn new(model_id: &ModelId) -> Self {
+        Self {
+            model: model_id.clone(),
+            preview: String::new(),
+            latest_message_text: None,
+            delta_text: String::new(),
+        }
+    }
+
+    fn observe_line(&mut self, line: &str) -> Result<(), ProviderError> {
         let line = line.trim();
         if line.is_empty() {
-            continue;
+            return Ok(());
+        }
+        if self.preview.len() < 200 {
+            let remaining = 200 - self.preview.len();
+            self.preview
+                .push_str(&line.chars().take(remaining).collect::<String>());
         }
         let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
+            return Ok(());
         };
 
         if let Some(message) = error_message_from_event(&parsed) {
             return Err(ProviderError::ProcessFailed {
-                model,
+                model: self.model.clone(),
                 message,
                 exit_code: None,
             });
@@ -225,28 +251,38 @@ pub fn extract_pi_response(jsonl: &str, model_id: &ModelId) -> Result<String, Pr
                 .and_then(|event| event.get("delta"))
                 .and_then(|delta| delta.as_str())
             {
-                delta_text.push_str(delta);
+                self.delta_text.push_str(delta);
             }
         }
 
         if matches!(event_type, "message_end" | "turn_end") {
             if let Some(text) = parsed.get("message").and_then(assistant_message_text) {
-                latest_message_text = Some(text);
+                self.latest_message_text = Some(text);
             }
         }
+
+        Ok(())
     }
 
-    if let Some(text) = latest_message_text.filter(|text| !text.trim().is_empty()) {
-        return Ok(text);
-    }
-    if !delta_text.trim().is_empty() {
-        return Ok(delta_text);
-    }
+    fn finish(self) -> Result<String, ProviderError> {
+        if let Some(text) = self
+            .latest_message_text
+            .filter(|text| !text.trim().is_empty())
+        {
+            return Ok(text);
+        }
+        if !self.delta_text.trim().is_empty() {
+            return Ok(self.delta_text);
+        }
 
-    Err(ProviderError::InvalidJson {
-        model,
-        message: format!("no assistant text found in pi JSON stream (raw: {preview})"),
-    })
+        Err(ProviderError::InvalidJson {
+            model: self.model,
+            message: format!(
+                "no assistant text found in pi JSON stream (raw: {})",
+                self.preview
+            ),
+        })
+    }
 }
 
 fn assistant_message_text(message: &serde_json::Value) -> Option<String> {
