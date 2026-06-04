@@ -56,6 +56,41 @@ impl FromStr for BrainstormIterationStrategy {
     }
 }
 
+/// Upstream prompt-variant expansion strategy for brainstorm runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BrainstormPromptVariantStrategy {
+    /// Use only the user's original prompt.
+    #[default]
+    Off,
+    /// Ask each model for one strategic prompt reframing, then run every model
+    /// against the original prompt plus every generated reframing.
+    PerModel,
+}
+
+impl BrainstormPromptVariantStrategy {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::PerModel => "per-model",
+        }
+    }
+}
+
+impl FromStr for BrainstormPromptVariantStrategy {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "off" => Ok(Self::Off),
+            "per-model" => Ok(Self::PerModel),
+            _ => Err(format!(
+                "unknown brainstorm prompt variant strategy '{value}' (expected off or per-model)"
+            )),
+        }
+    }
+}
+
 /// Configuration for a brainstorm run.
 pub struct BrainstormConfig {
     pub max_rounds: u32,
@@ -64,11 +99,29 @@ pub struct BrainstormConfig {
     pub timeout: Duration,
     /// What context proposers see after the first round.
     pub iteration_strategy: BrainstormIterationStrategy,
+    /// Whether to create upstream prompt reframings before the brainstorm loop.
+    pub prompt_variant_strategy: BrainstormPromptVariantStrategy,
     /// Prefer panel candidates at or above this mean score before backfilling
     /// by raw controversy. `None` keeps raw controversy selection.
     pub quality_floor: Option<f64>,
     /// If set, artifacts are saved per-round as each round completes.
     pub output_dir: Option<std::path::PathBuf>,
+}
+
+/// Prompt frame used by a brainstorm run.
+#[derive(Debug, Clone)]
+pub struct BrainstormPromptVariant {
+    pub label: String,
+    pub prompt: String,
+    pub generated_by: Option<ModelId>,
+}
+
+#[derive(Debug, Clone)]
+struct BrainstormLineage {
+    provider: Arc<dyn ModelProvider>,
+    owner_model_id: ModelId,
+    lineage_model_id: ModelId,
+    prompt: String,
 }
 
 /// Per-round data from a brainstorm run.
@@ -118,6 +171,8 @@ pub struct BrainstormResult {
     pub panel: Vec<PanelCandidate>,
     pub selection_strategy: String,
     pub iteration_strategy: BrainstormIterationStrategy,
+    pub prompt_variant_strategy: BrainstormPromptVariantStrategy,
+    pub prompt_variants: Vec<BrainstormPromptVariant>,
     pub total_calls: u32,
     pub rounds_completed: u32,
     pub rounds: Vec<BrainstormRound>,
@@ -221,6 +276,19 @@ struct BrainstormVisibilityRound {
 struct ParsedBrainstormEvaluation {
     score: f64,
     rationale: String,
+}
+
+fn parse_prompt_variant_response(response: &str) -> Option<String> {
+    let parsed = prompts::extract_json(response)
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
+        .or_else(|| serde_json::from_str::<serde_json::Value>(response).ok())?;
+
+    parsed
+        .get("prompt_variant")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
 }
 
 fn parse_brainstorm_evaluation_response(response: &str) -> Option<ParsedBrainstormEvaluation> {
@@ -415,6 +483,138 @@ fn propose_prompt_for_iteration(
     }
 }
 
+fn lineage_model_id(owner: &ModelId, variant_label: &str, expanded: bool) -> ModelId {
+    if expanded {
+        ModelId::from_parts(
+            owner.provider(),
+            format!("{}+{variant_label}", owner.model()).replace('/', "_"),
+        )
+    } else {
+        owner.clone()
+    }
+}
+
+async fn generate_prompt_variants(
+    providers: &[Arc<dyn ModelProvider>],
+    prompt: &str,
+    strategy: BrainstormPromptVariantStrategy,
+    semaphore: Arc<Semaphore>,
+    timeout: Duration,
+    provider_failures: &mut Vec<BrainstormProviderFailure>,
+) -> (Vec<BrainstormPromptVariant>, u32) {
+    let mut variants = vec![BrainstormPromptVariant {
+        label: "original".to_string(),
+        prompt: prompt.to_string(),
+        generated_by: None,
+    }];
+
+    if strategy == BrainstormPromptVariantStrategy::Off {
+        return (variants, 0);
+    }
+
+    let mut handles = tokio::task::JoinSet::new();
+    for provider in providers {
+        let provider = provider.clone();
+        let model_id = provider.model_id().clone();
+        let sem = semaphore.clone();
+        let prompt_text = prompts::brainstorm::brainstorm_prompt_variant_prompt(prompt);
+        let messages = vec![
+            Message::system(brainstorm_system_prompt_for_strategy(
+                BrainstormIterationStrategy::ScoreOnly,
+            )),
+            Message::user(prompt_text),
+        ];
+
+        handles.spawn(async move {
+            let _permit = sem.acquire().await.expect("semaphore closed");
+            let result = tokio::time::timeout(
+                timeout,
+                provider.send_message(
+                    &messages,
+                    Some(prompts::brainstorm::BRAINSTORM_PROMPT_VARIANT_SCHEMA),
+                ),
+            )
+            .await;
+            (model_id, result)
+        });
+    }
+
+    let mut calls = 0;
+    while let Some(result) = handles.join_next().await {
+        calls += 1;
+        match result {
+            Ok((model_id, Ok(Ok(response)))) => {
+                if let Some(prompt_variant) = parse_prompt_variant_response(&response) {
+                    let label = format!("variant-{}", variants.len());
+                    variants.push(BrainstormPromptVariant {
+                        label,
+                        prompt: prompt_variant,
+                        generated_by: Some(model_id),
+                    });
+                } else {
+                    provider_failures.push(BrainstormProviderFailure {
+                        round: 0,
+                        phase: Phase::Brainstorm,
+                        model_id,
+                        target_model_id: None,
+                        message: "provider returned an invalid brainstorm prompt variant"
+                            .to_string(),
+                    });
+                }
+            }
+            Ok((model_id, Ok(Err(err)))) => provider_failures.push(BrainstormProviderFailure {
+                round: 0,
+                phase: Phase::Brainstorm,
+                model_id,
+                target_model_id: None,
+                message: err.to_string(),
+            }),
+            Ok((model_id, Err(_))) => {
+                let err = ProviderError::Timeout {
+                    model: model_id.clone(),
+                    elapsed: timeout,
+                };
+                provider_failures.push(BrainstormProviderFailure {
+                    round: 0,
+                    phase: Phase::Brainstorm,
+                    model_id,
+                    target_model_id: None,
+                    message: err.to_string(),
+                });
+            }
+            Err(err) => provider_failures.push(BrainstormProviderFailure {
+                round: 0,
+                phase: Phase::Brainstorm,
+                model_id: join_error_model_id(),
+                target_model_id: None,
+                message: err.to_string(),
+            }),
+        }
+    }
+
+    (variants, calls)
+}
+
+fn build_lineages(
+    providers: &[Arc<dyn ModelProvider>],
+    prompt_variants: &[BrainstormPromptVariant],
+    expanded: bool,
+) -> Vec<BrainstormLineage> {
+    let mut lineages = Vec::new();
+    for provider in providers {
+        let owner_model_id = provider.model_id().clone();
+        for variant in prompt_variants {
+            lineages.push(BrainstormLineage {
+                provider: provider.clone(),
+                lineage_model_id: lineage_model_id(&owner_model_id, &variant.label, expanded),
+                owner_model_id: owner_model_id.clone(),
+                prompt: variant.prompt.clone(),
+            });
+        }
+    }
+    lineages
+}
+
 /// Run the brainstorm loop: configured iteration + controversial panel selection.
 ///
 /// Each round: all models propose with the configured benchmark iteration context,
@@ -452,13 +652,6 @@ pub async fn run(
         None => None,
     };
 
-    if let Some(ref dir) = config.output_dir {
-        let selection_strategy = selection_strategy_name(quality_floor);
-        if let Err(e) = save_run_metadata(dir, config, quality_floor, &selection_strategy) {
-            eprintln!("Warning: failed to save brainstorm metadata: {e}");
-        }
-    }
-
     let permits = if config.max_concurrent == 0 {
         providers.len().pow(2).max(1)
     } else {
@@ -478,19 +671,49 @@ pub async fn run(
     let mut provider_failures: Vec<BrainstormProviderFailure> = Vec::new();
     let mut had_eval_failure = false;
 
+    let (prompt_variants, prompt_variant_calls) = generate_prompt_variants(
+        providers,
+        prompt,
+        config.prompt_variant_strategy,
+        semaphore.clone(),
+        timeout,
+        &mut provider_failures,
+    )
+    .await;
+    total_calls += prompt_variant_calls;
+    let expanded = config.prompt_variant_strategy != BrainstormPromptVariantStrategy::Off;
+    let lineages = build_lineages(providers, &prompt_variants, expanded);
+
+    if let Some(ref dir) = config.output_dir {
+        let selection_strategy = selection_strategy_name(quality_floor);
+        if let Err(e) = save_run_metadata(
+            dir,
+            config,
+            quality_floor,
+            &selection_strategy,
+            &prompt_variants,
+            lineages.len(),
+        ) {
+            eprintln!("Warning: failed to save brainstorm metadata: {e}");
+        }
+        if let Err(e) = save_prompt_variants(dir, &prompt_variants) {
+            eprintln!("Warning: failed to save brainstorm prompt variants: {e}");
+        }
+    }
+
     for round in 1..=config.max_rounds {
         // ── Propose ─────────────────────────────────────────────────────
 
         let mut propose_handles = tokio::task::JoinSet::new();
 
-        for provider in providers {
-            let model_id = provider.model_id().clone();
+        for lineage in &lineages {
+            let model_id = lineage.lineage_model_id.clone();
             let sem = semaphore.clone();
-            let p = provider.clone();
+            let p = lineage.provider.clone();
 
             let user_content = propose_prompt_for_iteration(
                 config.iteration_strategy,
-                prompt,
+                &lineage.prompt,
                 &model_id,
                 &score_histories,
                 &review_histories,
@@ -595,8 +818,15 @@ pub async fn run(
 
         // ── Evaluate ────────────────────────────────────────────────────
 
-        // Single model: skip evaluation (no self-eval).
-        if round_proposals.len() == 1 {
+        let active_owner_count = lineages
+            .iter()
+            .filter(|lineage| round_proposals.contains_key(&lineage.lineage_model_id))
+            .map(|lineage| &lineage.owner_model_id)
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+
+        // Single peer provider: skip evaluation (no self-eval).
+        if active_owner_count < 2 {
             latest_answers = round_proposals
                 .iter()
                 .map(|(model_id, answer)| (model_id.clone(), answer.clone()))
@@ -644,18 +874,25 @@ pub async fn run(
 
         for evaluator_provider in providers {
             let evaluator_id = evaluator_provider.model_id().clone();
-            if !round_proposals.contains_key(&evaluator_id) {
+            if !lineages.iter().any(|lineage| {
+                lineage.owner_model_id == evaluator_id
+                    && round_proposals.contains_key(&lineage.lineage_model_id)
+            }) {
                 continue;
             }
 
-            for (evaluatee_id, answer_text) in &round_proposals {
-                if *evaluatee_id == evaluator_id {
+            for lineage in &lineages {
+                let evaluatee_id = &lineage.lineage_model_id;
+                let Some(answer_text) = round_proposals.get(evaluatee_id) else {
+                    continue;
+                };
+                if lineage.owner_model_id == evaluator_id {
                     continue;
                 }
 
                 let eval_label = label_map.get(evaluatee_id).cloned().unwrap_or_default();
                 let eval_prompt_text = prompts::brainstorm::brainstorm_evaluate_prompt(
-                    prompt,
+                    &lineage.prompt,
                     answer_text,
                     &eval_label,
                     &nonce,
@@ -850,7 +1087,13 @@ pub async fn run(
         None => scoring::select_panel(&mut candidates, config.panel_size),
     };
 
-    let evaluation_status = if latest_answers.len() < 2 {
+    let final_owner_count = lineages
+        .iter()
+        .filter(|lineage| latest_answers.contains_key(&lineage.lineage_model_id))
+        .map(|lineage| &lineage.owner_model_id)
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    let evaluation_status = if final_owner_count < 2 {
         if providers.len() == 1 && provider_failures.is_empty() {
             BrainstormEvaluationStatus::SkippedSingleModel
         } else {
@@ -866,7 +1109,7 @@ pub async fn run(
         BrainstormEvaluationStatus::PeerEvaluated
     };
     let degraded = !provider_failures.is_empty()
-        || (providers.len() > 1 && latest_answers.len() < providers.len())
+        || (lineages.len() > 1 && latest_answers.len() < lineages.len())
         || matches!(
             evaluation_status,
             BrainstormEvaluationStatus::Partial
@@ -889,6 +1132,8 @@ pub async fn run(
         panel,
         selection_strategy,
         iteration_strategy: config.iteration_strategy,
+        prompt_variant_strategy: config.prompt_variant_strategy,
+        prompt_variants,
         total_calls,
         rounds_completed: config.max_rounds,
         rounds: round_data,
@@ -940,11 +1185,16 @@ fn save_run_metadata(
     config: &BrainstormConfig,
     quality_floor: Option<f64>,
     selection_strategy: &str,
+    prompt_variants: &[BrainstormPromptVariant],
+    lineage_count: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(base_dir)?;
     let metadata = serde_json::json!({
         "verb": "brainstorm",
         "iteration_strategy": config.iteration_strategy.as_str(),
+        "prompt_variant_strategy": config.prompt_variant_strategy.as_str(),
+        "prompt_variant_count": prompt_variants.len(),
+        "lineage_count": lineage_count,
         "selection_strategy": selection_strategy,
         "max_rounds": config.max_rounds,
         "panel_size": config.panel_size,
@@ -954,6 +1204,28 @@ fn save_run_metadata(
     std::fs::write(
         base_dir.join("metadata.json"),
         serde_json::to_string_pretty(&metadata)?,
+    )?;
+    Ok(())
+}
+
+fn save_prompt_variants(
+    base_dir: &std::path::Path,
+    prompt_variants: &[BrainstormPromptVariant],
+) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir_all(base_dir)?;
+    let variants: Vec<serde_json::Value> = prompt_variants
+        .iter()
+        .map(|variant| {
+            serde_json::json!({
+                "label": variant.label,
+                "prompt": variant.prompt,
+                "generated_by": variant.generated_by.as_ref().map(ToString::to_string),
+            })
+        })
+        .collect();
+    std::fs::write(
+        base_dir.join("prompt-variants.json"),
+        serde_json::to_string_pretty(&variants)?,
     )?;
     Ok(())
 }
@@ -1026,6 +1298,7 @@ mod tests {
             max_concurrent: 0,
             timeout: Duration::from_secs(120),
             iteration_strategy: BrainstormIterationStrategy::default(),
+            prompt_variant_strategy: BrainstormPromptVariantStrategy::default(),
             quality_floor: None,
             output_dir: None,
         }
@@ -1039,6 +1312,25 @@ mod tests {
 
         assert!((parsed.score - 8.5).abs() < f64::EPSILON);
         assert_eq!(parsed.rationale, "good tension");
+    }
+
+    #[test]
+    fn prompt_variant_strategy_parsing_accepts_supported_variants() {
+        assert_eq!(
+            "off".parse::<BrainstormPromptVariantStrategy>().unwrap(),
+            BrainstormPromptVariantStrategy::Off
+        );
+        assert_eq!(
+            "per-model"
+                .parse::<BrainstormPromptVariantStrategy>()
+                .unwrap(),
+            BrainstormPromptVariantStrategy::PerModel
+        );
+        assert!(
+            "domain-collision"
+                .parse::<BrainstormPromptVariantStrategy>()
+                .is_err()
+        );
     }
 
     #[test]
@@ -1196,6 +1488,53 @@ mod tests {
         assert_eq!(
             result.evaluation_status,
             BrainstormEvaluationStatus::SkippedSingleModel
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn per_model_prompt_variants_expand_lineages() {
+        let pa = EchoProvider::new("test/a");
+        pa.queue_response(r#"{"prompt_variant": "frame from a"}"#.to_string());
+        pa.queue_response(r#"{"answer": "a original"}"#.to_string());
+        pa.queue_response(r#"{"answer": "a variant 1"}"#.to_string());
+        pa.queue_response(r#"{"answer": "a variant 2"}"#.to_string());
+        pa.queue_response(eval_json(8));
+        pa.queue_response(eval_json(8));
+        pa.queue_response(eval_json(8));
+
+        let pb = EchoProvider::new("test/b");
+        pb.queue_response(r#"{"prompt_variant": "frame from b"}"#.to_string());
+        pb.queue_response(r#"{"answer": "b original"}"#.to_string());
+        pb.queue_response(r#"{"answer": "b variant 1"}"#.to_string());
+        pb.queue_response(r#"{"answer": "b variant 2"}"#.to_string());
+        pb.queue_response(eval_json(7));
+        pb.queue_response(eval_json(7));
+        pb.queue_response(eval_json(7));
+
+        let providers: Vec<Arc<dyn ModelProvider>> = vec![Arc::new(pa), Arc::new(pb)];
+        let mut config = default_config(1, 3);
+        config.max_concurrent = 1;
+        config.prompt_variant_strategy = BrainstormPromptVariantStrategy::PerModel;
+        let result = run(&providers, "test prompt", &config).await.unwrap();
+
+        assert_eq!(result.prompt_variants.len(), 3);
+        assert_eq!(result.rounds[0].proposals.len(), 6);
+        assert_eq!(result.total_calls, 14);
+        assert_eq!(
+            result.evaluation_status,
+            BrainstormEvaluationStatus::PeerEvaluated
+        );
+        assert!(
+            result.rounds[0]
+                .proposals
+                .keys()
+                .any(|model_id| model_id.model().contains("+variant-"))
+        );
+        assert!(
+            result.rounds[0]
+                .eval_scores
+                .values()
+                .all(|scores| scores.len() == 1)
         );
     }
 

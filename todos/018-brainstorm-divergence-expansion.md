@@ -4,7 +4,7 @@ priority: medium
 milestone: v0.4
 depends_on: 004-verb-brainstorm
 created: 2026-04-24
-updated: 2026-05-21
+updated: 2026-06-04
 ---
 
 # Brainstorm Divergence Expansion
@@ -12,6 +12,8 @@ updated: 2026-05-21
 ## Goal
 
 Extend `refinery brainstorm` with optional upstream divergence mechanisms that generate a wider set of independent lineages before score-only iteration and controversial panel selection.
+
+**Progress 2026-06-04:** First-stage prompt reframing expansion is implemented behind hidden/internal `brainstorm --prompt-variants per-model`; see `docs/plans/2026-06-04-001-feat-brainstorm-prompt-reframing-expansion-plan.md`. Domain collisions remain future work.
 
 Do not start implementation until the v0 brainstorm smoke-test field report exists (`todos/019-brainstorm-smoke-test-field-report.md`). The field report should establish whether v0 score-only controversial selection needs polish before adding more lineage volume.
 
@@ -85,7 +87,7 @@ refinery brainstorm "..." \
 
 Possible staged rollout:
 
-1. `--prompt-variants per-model` only, no domain collisions.
+1. `--prompt-variants per-model` only, no domain collisions. **Implemented 2026-06-04 as hidden/internal benchmark flag.**
 2. `--collide-domains N` as a separate strategy.
 3. Combination mode once budget controls and selection are proven.
 

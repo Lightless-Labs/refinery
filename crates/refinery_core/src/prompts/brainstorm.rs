@@ -1,5 +1,27 @@
 use super::wrap_answer;
 
+/// JSON schema for BRAINSTORM PROMPT VARIANT generation.
+pub const BRAINSTORM_PROMPT_VARIANT_SCHEMA: &str = r#"{"type":"object","properties":{"prompt_variant":{"type":"string"}},"required":["prompt_variant"],"additionalProperties":false}"#;
+
+/// Build the prompt for generating one strategic brainstorm prompt reframing.
+#[must_use]
+pub fn brainstorm_prompt_variant_prompt(user_prompt: &str) -> String {
+    format!(
+        "Generate one strategically different prompt variation for this brainstorm request:\n\n\
+         {user_prompt}\n\n\
+         The variation must preserve the user's underlying goal while changing the frame in a meaningful way. \
+         Do not merely paraphrase. Reframe by changing one or more of: neglected stakeholder, success criterion, \
+         time horizon, causal model, domain metaphor, constraint set, abstraction level, risk appetite, inversion \
+         of the goal, mechanism-vs-idea framing, or second-order effects.\n\n\
+         Return ONLY a JSON block:\n\n\
+         ```json\n\
+         {{\n\
+           \"prompt_variant\": \"A standalone reframed prompt that can be given directly to a brainstormer.\"\n\
+         }}\n\
+         ```"
+    )
+}
+
 /// JSON schema for BRAINSTORM EVALUATION — scores on originality, insight, depth, feasibility.
 ///
 /// **Rationale comes before score** in both `required` and `properties` ordering —
@@ -53,6 +75,30 @@ pub fn brainstorm_evaluate_prompt(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn brainstorm_prompt_variant_schema_is_valid_json() {
+        let parsed: serde_json::Value = serde_json::from_str(BRAINSTORM_PROMPT_VARIANT_SCHEMA)
+            .expect("schema should be valid JSON");
+        assert_eq!(parsed["type"], "object");
+        assert!(
+            parsed["properties"]
+                .as_object()
+                .unwrap()
+                .contains_key("prompt_variant")
+        );
+    }
+
+    #[test]
+    fn brainstorm_prompt_variant_prompt_requires_strategic_reframing() {
+        let result = brainstorm_prompt_variant_prompt("Design better city streets");
+
+        assert!(result.contains("Design better city streets"));
+        assert!(result.contains("Do not merely paraphrase"));
+        assert!(result.contains("neglected stakeholder"));
+        assert!(result.contains("success criterion"));
+        assert!(result.contains("prompt_variant"));
+    }
 
     #[test]
     fn brainstorm_evaluate_prompt_mentions_all_dimensions() {

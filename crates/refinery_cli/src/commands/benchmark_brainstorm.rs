@@ -46,6 +46,12 @@ struct RunBenchmarkOutput {
     run_dir: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     iteration_strategy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt_variant_strategy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt_variant_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lineage_count: Option<usize>,
     final_round: u32,
     candidate_count: usize,
     selectors: Vec<SelectorOutput>,
@@ -86,6 +92,9 @@ struct EvalArtifact {
 #[derive(Debug, Deserialize)]
 struct RunMetadata {
     iteration_strategy: Option<String>,
+    prompt_variant_strategy: Option<String>,
+    prompt_variant_count: Option<usize>,
+    lineage_count: Option<usize>,
 }
 
 pub fn run(args: &BenchmarkBrainstormArgs) -> ExitCode {
@@ -132,8 +141,19 @@ fn analyze_run(run_dir: &Path, panel_size: usize) -> Result<RunBenchmarkOutput, 
     let final_round = find_final_round(run_dir)?;
     let round_dir = run_dir.join(format!("round-{final_round}"));
     let candidates = load_candidates(&round_dir)?;
-    let iteration_strategy =
-        load_run_metadata(run_dir)?.and_then(|metadata| metadata.iteration_strategy);
+    let metadata = load_run_metadata(run_dir)?;
+    let iteration_strategy = metadata
+        .as_ref()
+        .and_then(|metadata| metadata.iteration_strategy.clone());
+    let prompt_variant_strategy = metadata
+        .as_ref()
+        .and_then(|metadata| metadata.prompt_variant_strategy.clone());
+    let prompt_variant_count = metadata
+        .as_ref()
+        .and_then(|metadata| metadata.prompt_variant_count);
+    let lineage_count = metadata
+        .as_ref()
+        .and_then(|metadata| metadata.lineage_count);
 
     let selectors = vec![
         selector_output("mean", select_by_mean(&candidates, panel_size)),
@@ -155,6 +175,9 @@ fn analyze_run(run_dir: &Path, panel_size: usize) -> Result<RunBenchmarkOutput, 
     Ok(RunBenchmarkOutput {
         run_dir: run_dir.display().to_string(),
         iteration_strategy,
+        prompt_variant_strategy,
+        prompt_variant_count,
+        lineage_count,
         final_round,
         candidate_count: candidates.len(),
         selectors,
@@ -475,6 +498,15 @@ fn emit_text(output: &BenchmarkOutput) {
         println!("\nRun: {}", run.run_dir);
         if let Some(strategy) = &run.iteration_strategy {
             println!("Iteration strategy: {strategy}");
+        }
+        if let Some(strategy) = &run.prompt_variant_strategy {
+            println!("Prompt variant strategy: {strategy}");
+        }
+        if let Some(count) = run.prompt_variant_count {
+            println!("Prompt variants: {count}");
+        }
+        if let Some(count) = run.lineage_count {
+            println!("Lineages: {count}");
         }
         println!("Final round: {}", run.final_round);
         println!("Candidates: {}", run.candidate_count);

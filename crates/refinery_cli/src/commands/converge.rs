@@ -98,6 +98,7 @@ pub async fn run(args: ConvergeArgs) -> ExitCode {
                 panel_size: None,
                 selection_strategy: None,
                 iteration_strategy: None,
+                prompt_variant_strategy: None,
                 warning,
             });
         }

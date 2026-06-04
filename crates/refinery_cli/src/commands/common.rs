@@ -134,6 +134,8 @@ pub struct DryRunOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iteration_strategy: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_variant_strategy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
 }
 
