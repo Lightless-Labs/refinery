@@ -16,6 +16,7 @@ use tundish_core::types::{Message, ModelId, Role};
 /// the final assistant text because streamed message updates repeat context.
 /// Keep a bounded capture while allowing normal benchmark-sized responses.
 const MAX_RESPONSE_SIZE: usize = 64_000_000;
+const MAX_STREAM_ERROR_OUTPUT_SIZE: usize = 64_000;
 
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -280,6 +281,195 @@ pub async fn spawn_cli(
             Ok(stdout)
         }
         Ok(Err(e)) => Err(e), // IdleTimeout or other streaming error
+        Err(_) => Err(ProviderError::Timeout {
+            model: model.clone(),
+            elapsed: max_timeout,
+        }),
+    }
+}
+
+/// Spawn a CLI subprocess and process stdout incrementally line-by-line.
+///
+/// This preserves the same isolation, timeout, stderr-draining, and process-exit
+/// behavior as [`spawn_cli`], but does not retain full stdout in memory. The
+/// caller's `line_handler` receives each stdout line and can keep only the
+/// parsed state it needs.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+pub async fn spawn_cli_stream_lines<F>(
+    binary_path: &PathBuf,
+    args: &[&str],
+    env_vars: &[(&str, &str)],
+    max_timeout: Duration,
+    idle_timeout: Duration,
+    model: &ModelId,
+    progress: Option<ProgressFn>,
+    mut line_handler: F,
+) -> Result<(), ProviderError>
+where
+    F: FnMut(&str) -> Result<(), ProviderError>,
+{
+    let mut cmd = Command::new(binary_path);
+    cmd.env_clear();
+    cmd.env("PATH", sanitized_path());
+    if let Ok(tmpdir) = std::env::var("TMPDIR") {
+        cmd.env("TMPDIR", tmpdir);
+    }
+    for (key, value) in env_vars {
+        cmd.env(key, value);
+    }
+    for arg in args {
+        cmd.arg(arg);
+    }
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    #[cfg(unix)]
+    {
+        #[allow(unsafe_code)]
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+
+    cmd.kill_on_drop(true);
+
+    debug!(
+        model = %model,
+        binary = ?binary_path,
+        args = ?args,
+        max_timeout = ?max_timeout,
+        idle_timeout = ?idle_timeout,
+        "spawning streaming CLI subprocess"
+    );
+
+    let mut child = cmd.spawn().map_err(|e| ProviderError::ProcessFailed {
+        model: model.clone(),
+        message: e.to_string(),
+        exit_code: None,
+    })?;
+
+    let stdout_handle = child.stdout.take().expect("stdout piped");
+    let stderr_handle = child.stderr.take().expect("stderr piped");
+
+    let stderr_task = tokio::spawn(async move {
+        let mut reader = BufReader::new(stderr_handle);
+        let mut buf = String::new();
+        while let Ok(n) = reader.read_line(&mut buf).await {
+            if n == 0 {
+                break;
+            }
+        }
+        buf
+    });
+
+    let model_clone = model.clone();
+    let streaming_read = async {
+        let mut reader = BufReader::new(stdout_handle);
+        let mut stdout_preview = String::new();
+        let mut line_buf = String::new();
+        let mut line_count: usize = 0;
+        let start = Instant::now();
+
+        loop {
+            line_buf.clear();
+            let read_result =
+                tokio::time::timeout(idle_timeout, reader.read_line(&mut line_buf)).await;
+
+            match read_result {
+                Ok(Ok(0)) => break,
+                Ok(Ok(_)) => {
+                    line_count += 1;
+                    let preview: String = line_buf.trim_end().chars().take(200).collect();
+                    debug!(model = %model_clone, line = %preview, "stream event");
+                    if let Some(ref cb) = progress {
+                        cb(&model_clone, line_count, start.elapsed());
+                    }
+
+                    if stdout_preview.len() < MAX_STREAM_ERROR_OUTPUT_SIZE {
+                        let remaining = MAX_STREAM_ERROR_OUTPUT_SIZE - stdout_preview.len();
+                        stdout_preview
+                            .push_str(&line_buf.chars().take(remaining).collect::<String>());
+                    }
+
+                    if let Some(msg) = detect_fatal_stream_error(line_buf.trim()) {
+                        return Err(ProviderError::ProcessFailed {
+                            model: model_clone.clone(),
+                            message: msg,
+                            exit_code: None,
+                        });
+                    }
+                    line_handler(line_buf.trim_end_matches(['\r', '\n']))?;
+                }
+                Ok(Err(e)) => {
+                    return Err(ProviderError::ProcessFailed {
+                        model: model_clone.clone(),
+                        message: format!("stdout read error: {e}"),
+                        exit_code: None,
+                    });
+                }
+                Err(_) => {
+                    return Err(ProviderError::IdleTimeout {
+                        model: model_clone.clone(),
+                        idle: idle_timeout,
+                    });
+                }
+            }
+        }
+
+        Ok(stdout_preview)
+    };
+
+    let result = tokio::time::timeout(max_timeout, streaming_read).await;
+
+    match result {
+        Ok(Ok(stdout_preview)) => {
+            let status = child
+                .wait()
+                .await
+                .map_err(|e| ProviderError::ProcessFailed {
+                    model: model.clone(),
+                    message: e.to_string(),
+                    exit_code: None,
+                })?;
+            let stderr = stderr_task.await.unwrap_or_default();
+
+            if !status.success() {
+                let raw = if stderr.is_empty() {
+                    &stdout_preview
+                } else {
+                    &stderr
+                };
+                let message = extract_error_from_jsonl(raw)
+                    .or_else(|| {
+                        raw.lines()
+                            .map(str::trim)
+                            .find(|line| !line.is_empty() && !line.starts_with('{'))
+                            .map(String::from)
+                    })
+                    .unwrap_or_else(|| "process failed".to_string());
+                warn!(
+                    model = %model,
+                    exit_code = ?status.code(),
+                    stderr = %stderr,
+                    stdout_len = stdout_preview.len(),
+                    "CLI process failed"
+                );
+                return Err(ProviderError::ProcessFailed {
+                    model: model.clone(),
+                    message,
+                    exit_code: status.code(),
+                });
+            }
+
+            Ok(())
+        }
+        Ok(Err(e)) => Err(e),
         Err(_) => Err(ProviderError::Timeout {
             model: model.clone(),
             elapsed: max_timeout,
@@ -695,6 +885,34 @@ mod tests {
         assert!(result.is_ok());
         let path = result.unwrap();
         assert!(path.exists());
+    }
+
+    #[tokio::test]
+    async fn spawn_cli_stream_lines_collects_stdout_and_drains_stderr() {
+        let shell = resolve_binary("sh").expect("sh should be available for process test");
+        let model = ModelId::from_parts("test", "stream");
+        let mut lines = Vec::new();
+
+        spawn_cli_stream_lines(
+            &shell,
+            &[
+                "-c",
+                "dd if=/dev/zero bs=1024 count=128 2>/dev/null | tr '\\000' e >&2; printf 'first\\nsecond\\n'",
+            ],
+            &[],
+            Duration::from_secs(5),
+            Duration::from_secs(5),
+            &model,
+            None,
+            |line| {
+                lines.push(line.to_string());
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(lines, vec!["first".to_string(), "second".to_string()]);
     }
 
     #[tokio::test]

@@ -2,11 +2,14 @@
 title: "fix: stream-parse Pi JSON events instead of buffering full stdout"
 priority: medium
 milestone: v0.4
-status: open
+status: completed
 created: 2026-05-30
+completed: 2026-06-04
 ---
 
 # Stream-Parse Pi JSON Events
+
+**Completed 2026-06-04:** Pi provider now uses a line-streaming subprocess path and stateful Pi JSON parser, retaining only assistant text/error state instead of full stdout. See `docs/plans/2026-06-04-002-fix-stream-parse-pi-json-events-plan.md` and `docs/brainstorms/2026-06-04-brainstorm-l3-prompt-reframing-smoke.md`.
 
 ## Problem
 
