@@ -14,6 +14,7 @@ todo: 013-brainstorm-strategy-benchmarks
 **Addendum:** 2026-05-30 — L2 iteration strategy suite completed with Pi-backed model routing; see `docs/brainstorms/2026-05-30-brainstorm-l2-iteration-strategy-benchmark.md`.
 **Addendum:** 2026-05-30 — Added blind panel review pack generator (`refinery review-brainstorm-panels`) and generated the first L2 review packet.
 **Addendum:** 2026-06-01 — Completed first-pass qualitative L2 panel review; see `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md`.
+**Addendum:** 2026-06-05 — Ran an updated-model L3 smoke with `pi/kimi-coding/kimi-for-coding:off` and `pi/minimax/MiniMax-M3:off`; see `docs/brainstorms/2026-06-05-brainstorm-l3-updated-model-smoke.md`.
 
 ## Context
 
@@ -176,7 +177,7 @@ Result: `score-only` remained strongest on useful diversity/non-overlap; `full-v
 
 ## Next Implementation Step
 
-Continue `todos/013` with either a human/calibrated model-judge pass over `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md` or move to L3 prompt-reframing expansion planning in `todos/018`. Do not change the production default based on the first-pass review alone.
+Continue `todos/013` with either a human/calibrated model-judge pass over `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md` or a carefully budgeted L3 prompt-reframing comparison from `todos/018`. The 2026-06-05 updated-model smoke showed Kimi-for-coding and MiniMax M3 are available through Pi, but MiniMax M3 can dominate runtime and timed out on one expanded product-prompt lineage; do not launch a full 4-model × 6-prompt L3 suite until latency/output budget controls are explicit. Do not change the production default based on the first-pass L2 review or this small L3 smoke alone.
 
 ## Verification
 
@@ -191,6 +192,7 @@ Completed:
 - L2 six-prompt suite run across `blind`, `score-only`, `own-reviews`, and `full-visibility`; analyzer outputs saved under `target/brainstorm-benchmark-2026-05-29-l2-pi-serial/logs/`.
 - Blind panel review pack generator added as `refinery review-brainstorm-panels`; L2 review pack and answer key generated under the same logs directory.
 - First-pass L2 panel review documented in `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md`.
+- Updated-model L3 smoke documented in `docs/brainstorms/2026-06-05-brainstorm-l3-updated-model-smoke.md`.
 - `cargo fmt --all -- --check`
 - `cargo test -p refinery_core brainstorm`
 - `cargo test -p refinery_cli`
