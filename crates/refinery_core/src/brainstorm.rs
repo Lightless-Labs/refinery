@@ -513,16 +513,16 @@ async fn generate_prompt_variants(
     }
 
     let mut handles = tokio::task::JoinSet::new();
+    let prompt_text = prompts::brainstorm::brainstorm_prompt_variant_prompt(prompt);
     for provider in providers {
         let provider = provider.clone();
         let model_id = provider.model_id().clone();
         let sem = semaphore.clone();
-        let prompt_text = prompts::brainstorm::brainstorm_prompt_variant_prompt(prompt);
         let messages = vec![
             Message::system(brainstorm_system_prompt_for_strategy(
                 BrainstormIterationStrategy::ScoreOnly,
             )),
-            Message::user(prompt_text),
+            Message::user(prompt_text.clone()),
         ];
 
         handles.spawn(async move {

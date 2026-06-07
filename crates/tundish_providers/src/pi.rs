@@ -251,7 +251,11 @@ impl PiResponseParser {
                 .and_then(|event| event.get("delta"))
                 .and_then(|delta| delta.as_str())
             {
-                self.delta_text.push_str(delta);
+                if delta.starts_with(&self.delta_text) {
+                    self.delta_text = delta.to_string();
+                } else if !self.delta_text.ends_with(delta) {
+                    self.delta_text.push_str(delta);
+                }
             }
         }
 
@@ -396,6 +400,16 @@ mod tests {
     fn extract_streaming_delta_fallback() {
         let jsonl = r#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"Hello "}}
 {"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"world"}}"#;
+
+        let response =
+            extract_pi_response(jsonl, &ModelId::from_parts("pi", "openai/test")).unwrap();
+        assert_eq!(response, "Hello world");
+    }
+
+    #[test]
+    fn extract_accumulated_streaming_delta_fallback() {
+        let jsonl = r#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"Hello"}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"Hello world"}}"#;
 
         let response =
             extract_pi_response(jsonl, &ModelId::from_parts("pi", "openai/test")).unwrap();
