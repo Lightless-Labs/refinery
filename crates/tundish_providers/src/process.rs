@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
+use tokio::process::{ChildStderr, Command};
 use tracing::{debug, warn};
 use tundish_core::error::ProviderError;
 use tundish_core::progress::ProgressFn;
@@ -34,6 +34,25 @@ fn sanitized_path() -> OsString {
         std::env::split_paths(&base).filter(|p| !p.as_os_str().is_empty() && p.is_absolute()),
     )
     .unwrap_or(default)
+}
+
+async fn collect_bounded_stderr(stderr_handle: ChildStderr) -> String {
+    let mut reader = BufReader::new(stderr_handle);
+    let mut buf = String::new();
+    let mut line = String::new();
+
+    while let Ok(n) = reader.read_line(&mut line).await {
+        if n == 0 {
+            break;
+        }
+        if buf.len() < MAX_STREAM_ERROR_OUTPUT_SIZE {
+            let remaining = MAX_STREAM_ERROR_OUTPUT_SIZE - buf.len();
+            buf.push_str(&line.chars().take(remaining).collect::<String>());
+        }
+        line.clear();
+    }
+
+    buf
 }
 
 pub(crate) fn unique_temp_path(prefix: &str, extension: &str) -> PathBuf {
@@ -145,16 +164,7 @@ pub async fn spawn_cli(
     // Drain stderr concurrently to prevent pipe-buffer deadlock.
     // If a subprocess writes >64KB to stderr while we block on stdout,
     // the OS pipe buffer fills and the subprocess blocks, stalling stdout too.
-    let stderr_task = tokio::spawn(async move {
-        let mut reader = BufReader::new(stderr_handle);
-        let mut buf = String::new();
-        while let Ok(n) = reader.read_line(&mut buf).await {
-            if n == 0 {
-                break;
-            }
-        }
-        buf
-    });
+    let stderr_task = tokio::spawn(collect_bounded_stderr(stderr_handle));
 
     let model_clone = model.clone();
 
@@ -357,16 +367,7 @@ where
     let stdout_handle = child.stdout.take().expect("stdout piped");
     let stderr_handle = child.stderr.take().expect("stderr piped");
 
-    let stderr_task = tokio::spawn(async move {
-        let mut reader = BufReader::new(stderr_handle);
-        let mut buf = String::new();
-        while let Ok(n) = reader.read_line(&mut buf).await {
-            if n == 0 {
-                break;
-            }
-        }
-        buf
-    });
+    let stderr_task = tokio::spawn(collect_bounded_stderr(stderr_handle));
 
     let model_clone = model.clone();
     let streaming_read = async {
@@ -913,6 +914,30 @@ mod tests {
         .unwrap();
 
         assert_eq!(lines, vec!["first".to_string(), "second".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn spawn_cli_stream_lines_caps_stderr_preview_while_draining() {
+        let shell = resolve_binary("sh").expect("sh should be available for process test");
+        let model = ModelId::from_parts("test", "stream");
+
+        let err = spawn_cli_stream_lines(
+            &shell,
+            &[
+                "-c",
+                "dd if=/dev/zero bs=1024 count=128 2>/dev/null | tr '\\000' e >&2; exit 1",
+            ],
+            &[],
+            Duration::from_secs(5),
+            Duration::from_secs(5),
+            &model,
+            None,
+            |_| Ok(()),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.to_string().len() < MAX_STREAM_ERROR_OUTPUT_SIZE + 256);
     }
 
     #[tokio::test]
