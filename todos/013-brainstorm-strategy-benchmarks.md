@@ -4,7 +4,7 @@ priority: low
 milestone: v0.4
 depends_on: 004-verb-brainstorm
 status: in_progress
-updated: 2026-06-05
+updated: 2026-06-09
 ---
 
 # Benchmark: Brainstorm Iteration and Selection Strategies
@@ -102,9 +102,9 @@ The fixed six-prompt suite has now been run for all four L2 variants with Pi-bac
 
 A first-pass qualitative review over the generated blind panel review pack is complete. Result: `score-only` still looked strongest on useful diversity and non-overlap; `full-visibility` looked strongest on actionability and coverage; `own-reviews` did not dominate globally but produced the strongest debugging/process panel. Keep production default as `score-only` until stronger human/calibrated model-judge evidence says otherwise.
 
-Latest L3 smoke with updated Pi models (`pi/kimi-coding/kimi-for-coding:off`, `pi/minimax/MiniMax-M3:off`) is documented in `docs/brainstorms/2026-06-05-brainstorm-l3-updated-model-smoke.md`. A two-model product prompt showed prompt reframing can increase the candidate pool and apparent quality, but the run degraded on a MiniMax M3 timeout and cannot support selector/default changes.
+Latest L3 three-model sample is documented in `docs/brainstorms/2026-06-09-brainstorm-l3-three-model-sample.md`. It compared `--prompt-variants off` vs `per-model` on product and technical prompts with Codex, GLM, and Kimi-for-coding. Per-model improved two-prompt `controversy_floor_7` average quality floor (`7.00` → `8.00`) and disagreement (`0.33` → `0.75`), but both per-model runs degraded due to evaluation issues (GLM invalid eval scores; one Codex SSE header timeout), so it cannot support default changes.
 
-Next concrete step: either run a human/calibrated model-judge pass over the L2 panel review findings, or run a carefully budgeted L3 prompt-reframing comparison. For L3, use `score-only` as the baseline, treat `own-reviews` as optional, and avoid launching a full 4-model × 6-prompt suite with MiniMax M3 until latency/output budget controls are explicit.
+Next concrete step: either run a human/calibrated model-judge pass over the L2/L3 panel findings, run 2-4 more L3 prompts with the same three-model panel, or first harden/triage GLM invalid evaluation scores on expanded prompts. For L3, use `score-only` as the baseline, treat `own-reviews` as optional, and avoid launching a full 4-model × 6-prompt suite with MiniMax M3 until latency/output budget controls are explicit.
 
 ## References
 
