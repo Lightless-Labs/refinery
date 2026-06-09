@@ -15,6 +15,7 @@ todo: 013-brainstorm-strategy-benchmarks
 **Addendum:** 2026-05-30 — Added blind panel review pack generator (`refinery review-brainstorm-panels`) and generated the first L2 review packet.
 **Addendum:** 2026-06-01 — Completed first-pass qualitative L2 panel review; see `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md`.
 **Addendum:** 2026-06-05 — Ran an updated-model L3 smoke with `pi/kimi-coding/kimi-for-coding:off` and `pi/minimax/MiniMax-M3:off`; see `docs/brainstorms/2026-06-05-brainstorm-l3-updated-model-smoke.md`.
+**Addendum:** 2026-06-09 — Ran a two-prompt three-model L3 comparison (`off` vs `per-model`) with Codex, GLM, and Kimi-for-coding; see `docs/brainstorms/2026-06-09-brainstorm-l3-three-model-sample.md`.
 
 ## Context
 
@@ -177,7 +178,7 @@ Result: `score-only` remained strongest on useful diversity/non-overlap; `full-v
 
 ## Next Implementation Step
 
-Continue `todos/013` with either a human/calibrated model-judge pass over `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md` or a carefully budgeted L3 prompt-reframing comparison from `todos/018`. The 2026-06-05 updated-model smoke showed Kimi-for-coding and MiniMax M3 are available through Pi, but MiniMax M3 can dominate runtime and timed out on one expanded product-prompt lineage; do not launch a full 4-model × 6-prompt L3 suite until latency/output budget controls are explicit. Do not change the production default based on the first-pass L2 review or this small L3 smoke alone.
+Continue `todos/013` with either a human/calibrated model-judge pass over `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md`, 2-4 more L3 prompts with the Codex/GLM/Kimi-for-coding panel, or hardening/triage for GLM invalid evaluation scores on expanded prompt-reframing runs. The 2026-06-05 updated-model smoke showed Kimi-for-coding and MiniMax M3 are available through Pi, but MiniMax M3 can dominate runtime and timed out on one expanded product-prompt lineage; do not launch a full 4-model × 6-prompt L3 suite until latency/output budget controls are explicit. The 2026-06-09 three-model sample showed promising quality-floor/disagreement gains for `per-model`, but both expanded runs degraded due to evaluator failures. Do not change the production default based on the first-pass L2 review or small L3 samples alone.
 
 ## Verification
 
@@ -193,6 +194,7 @@ Completed:
 - Blind panel review pack generator added as `refinery review-brainstorm-panels`; L2 review pack and answer key generated under the same logs directory.
 - First-pass L2 panel review documented in `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md`.
 - Updated-model L3 smoke documented in `docs/brainstorms/2026-06-05-brainstorm-l3-updated-model-smoke.md`.
+- Three-model L3 sample documented in `docs/brainstorms/2026-06-09-brainstorm-l3-three-model-sample.md`.
 - `cargo fmt --all -- --check`
 - `cargo test -p refinery_core brainstorm`
 - `cargo test -p refinery_cli`
