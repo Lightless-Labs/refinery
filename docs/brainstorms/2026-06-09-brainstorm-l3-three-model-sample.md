@@ -83,7 +83,7 @@ Two-prompt averages:
 | Prompt variants | Mean quality | Min quality | Disagreement | Lexical overlap | Meta preamble rate |
 |---|---:|---:|---:|---:|---:|
 | `off` | 7.83 | 7.00 | 0.33 | 0.056 | 0.00 |
-| `per-model` | 8.25 | 8.00 | 0.75 | 0.073 | 0.00 |
+| `per-model` | 8.25 | 8.00 | 0.75 | 0.074 | 0.00 |
 
 ## Observations
 
