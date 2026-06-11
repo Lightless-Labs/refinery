@@ -296,16 +296,7 @@ fn parse_brainstorm_evaluation_response(response: &str) -> Option<ParsedBrainsto
         .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
         .or_else(|| serde_json::from_str::<serde_json::Value>(response).ok())?;
 
-    #[allow(clippy::cast_precision_loss)]
-    let score = parsed
-        .get("score")
-        .and_then(|v| {
-            v.as_u64()
-                .map(|u| u as f64)
-                .or_else(|| v.as_f64())
-                .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
-        })
-        .filter(|score| (1.0..=10.0).contains(score))?;
+    let score = parse_brainstorm_score(&parsed).filter(|score| (1.0..=10.0).contains(score))?;
     let rationale = parsed
         .get("rationale")
         .and_then(|value| value.as_str())
@@ -313,6 +304,112 @@ fn parse_brainstorm_evaluation_response(response: &str) -> Option<ParsedBrainsto
         .to_string();
 
     Some(ParsedBrainstormEvaluation { score, rationale })
+}
+
+fn parse_brainstorm_score(parsed: &serde_json::Value) -> Option<f64> {
+    parsed
+        .get("score")
+        .and_then(score_value_as_f64)
+        .or_else(|| parsed.get("overall_score").and_then(score_value_as_f64))
+        .or_else(|| average_dimension_scores(parsed))
+}
+
+fn score_value_as_f64(value: &serde_json::Value) -> Option<f64> {
+    #[allow(clippy::cast_precision_loss)]
+    value
+        .as_u64()
+        .map(|u| u as f64)
+        .or_else(|| value.as_f64())
+        .or_else(|| value.as_str().and_then(parse_score_text))
+        .or_else(|| value.get("score").and_then(score_value_as_f64))
+        .or_else(|| value.get("value").and_then(score_value_as_f64))
+}
+
+fn parse_score_text(text: &str) -> Option<f64> {
+    let trimmed = text.trim();
+    trimmed.parse::<f64>().ok().or_else(|| {
+        let number_spans = number_spans(trimmed);
+        if number_spans.is_empty() {
+            return None;
+        }
+
+        let lower = trimmed.to_ascii_lowercase();
+        if let Some(score_idx) = lower.rfind("score") {
+            if let Some((start, end)) = number_spans
+                .iter()
+                .copied()
+                .find(|(start, _)| *start >= score_idx)
+            {
+                return trimmed[start..end].parse::<f64>().ok();
+            }
+        }
+
+        if let Some((start, end)) = number_spans.first().copied() {
+            let after_first = lower[end..].trim_start();
+            if after_first.starts_with("out of") || after_first.starts_with("/10") {
+                return trimmed[start..end].parse::<f64>().ok();
+            }
+        }
+
+        let (start, end) = number_spans.last().copied()?;
+        trimmed[start..end].parse::<f64>().ok()
+    })
+}
+
+fn number_spans(text: &str) -> Vec<(usize, usize)> {
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let mut spans = Vec::new();
+    let mut idx = 0;
+
+    while idx < chars.len() {
+        let (start, ch) = chars[idx];
+        let next = chars.get(idx + 1).map(|(_, next)| *next);
+        let begins_number = ch.is_ascii_digit()
+            || ((ch == '-' || ch == '+') && next.is_some_and(|next| next.is_ascii_digit()));
+        if !begins_number {
+            idx += 1;
+            continue;
+        }
+
+        let mut cursor = idx;
+        if ch == '-' || ch == '+' {
+            cursor += 1;
+        }
+
+        let mut has_dot = false;
+        while cursor < chars.len() {
+            let (_, current) = chars[cursor];
+            if current.is_ascii_digit() {
+                cursor += 1;
+            } else if current == '.' && !has_dot {
+                has_dot = true;
+                cursor += 1;
+            } else {
+                break;
+            }
+        }
+
+        let end = chars
+            .get(cursor)
+            .map_or_else(|| text.len(), |(end, _)| *end);
+        spans.push((start, end));
+        idx = cursor;
+    }
+
+    spans
+}
+
+fn average_dimension_scores(parsed: &serde_json::Value) -> Option<f64> {
+    let scores = ["originality", "insight", "depth", "feasibility"]
+        .into_iter()
+        .map(|field| parsed.get(field).and_then(score_value_as_f64))
+        .collect::<Option<Vec<_>>>()?;
+
+    if scores.iter().all(|score| (1.0..=10.0).contains(score)) {
+        Some(scores.iter().sum::<f64>() / 4.0)
+    } else {
+        None
+    }
 }
 
 fn sanitize_brainstorm_context(text: &str) -> String {
@@ -1312,6 +1409,125 @@ mod tests {
 
         assert!((parsed.score - 8.5).abs() < f64::EPSILON);
         assert_eq!(parsed.rationale, "good tension");
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_accepts_score_text_with_scale() {
+        let parsed = parse_brainstorm_evaluation_response(
+            r#"{"rationale":"good tension","score":"8 out of 10"}"#,
+        )
+        .expect("scaled score text should parse");
+
+        assert!((parsed.score - 8.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_accepts_slash_scale_without_using_denominator() {
+        let parsed =
+            parse_brainstorm_evaluation_response(r#"{"rationale":"good tension","score":"8/10"}"#)
+                .expect("slash-scale score text should parse");
+
+        assert!((parsed.score - 8.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_accepts_plus_signed_score_text() {
+        let parsed = parse_brainstorm_evaluation_response(
+            r#"{"rationale":"good tension","score":"score: +8"}"#,
+        )
+        .expect("plus-signed score text should parse");
+
+        assert!((parsed.score - 8.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_uses_trailing_score_after_scale_text() {
+        let parsed = parse_brainstorm_evaluation_response(
+            r#"{"rationale":"good tension","score":"on a 1-10 scale: 8"}"#,
+        )
+        .expect("trailing score after scale text should parse");
+
+        assert!((parsed.score - 8.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_prefers_number_after_score_label() {
+        let parsed = parse_brainstorm_evaluation_response(
+            r#"{"rationale":"good tension","score":"on a 1-10 scale, score: 8"}"#,
+        )
+        .expect("number after score label should parse");
+
+        assert!((parsed.score - 8.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_accepts_nested_score_value() {
+        let parsed = parse_brainstorm_evaluation_response(
+            r#"{"rationale":"good tension","score":{"value":7.5}}"#,
+        )
+        .expect("nested score value should parse");
+
+        assert!((parsed.score - 7.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_accepts_overall_score_alias() {
+        let parsed = parse_brainstorm_evaluation_response(
+            r#"{"rationale":"good tension","overall_score":9}"#,
+        )
+        .expect("overall_score alias should parse");
+
+        assert!((parsed.score - 9.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_averages_dimensions_when_overall_score_missing() {
+        let parsed = parse_brainstorm_evaluation_response(
+            r#"{"originality":8,"insight":7,"depth":9,"feasibility":6,"rationale":"good tension"}"#,
+        )
+        .expect("dimension scores should provide fallback score");
+
+        assert!((parsed.score - 7.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_rejects_missing_fallback_dimension() {
+        assert!(
+            parse_brainstorm_evaluation_response(
+                r#"{"originality":8,"insight":7,"depth":9,"rationale":"missing feasibility"}"#,
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_rejects_extra_score_without_required_dimension() {
+        assert!(
+            parse_brainstorm_evaluation_response(
+                r#"{"originality":8,"insight":7,"depth":9,"novelty":10,"rationale":"extra score cannot replace feasibility"}"#,
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_rejects_out_of_range_text_score() {
+        assert!(
+            parse_brainstorm_evaluation_response(
+                r#"{"rationale":"negative text score","score":"-1 out of 10"}"#,
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_rejects_out_of_range_fallback_dimensions() {
+        assert!(
+            parse_brainstorm_evaluation_response(
+                r#"{"originality":8,"insight":7,"depth":11,"feasibility":6,"rationale":"bad score"}"#,
+            )
+            .is_none()
+        );
     }
 
     #[test]
