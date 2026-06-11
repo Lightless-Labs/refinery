@@ -16,6 +16,7 @@ todo: 013-brainstorm-strategy-benchmarks
 **Addendum:** 2026-06-01 — Completed first-pass qualitative L2 panel review; see `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md`.
 **Addendum:** 2026-06-05 — Ran an updated-model L3 smoke with `pi/kimi-coding/kimi-for-coding:off` and `pi/minimax/MiniMax-M3:off`; see `docs/brainstorms/2026-06-05-brainstorm-l3-updated-model-smoke.md`.
 **Addendum:** 2026-06-09 — Ran a two-prompt three-model L3 comparison (`off` vs `per-model`) with Codex, GLM, and Kimi-for-coding; see `docs/brainstorms/2026-06-09-brainstorm-l3-three-model-sample.md`.
+**Addendum:** 2026-06-11 — Completed a verified brainstorm evaluation parser hardening pass for GLM-style invalid-score failures: score parsing now accepts scaled score text, nested score objects, `overall_score`, and a missing-overall fallback to the four required dimension scores. Targeted parser/brainstorm tests and `refinery_core` clippy passed.
 
 ## Context
 
