@@ -142,6 +142,7 @@ pub struct BrainstormProviderFailure {
     pub model_id: ModelId,
     pub target_model_id: Option<ModelId>,
     pub message: String,
+    pub response_preview: Option<String>,
 }
 
 /// Whether peer evaluation produced usable scores for the brainstorm panel.
@@ -276,6 +277,15 @@ struct BrainstormVisibilityRound {
 struct ParsedBrainstormEvaluation {
     score: f64,
     rationale: String,
+}
+
+const INVALID_RESPONSE_PREVIEW_CHARS: usize = 2_000;
+
+fn invalid_response_preview(response: &str) -> String {
+    response
+        .chars()
+        .take(INVALID_RESPONSE_PREVIEW_CHARS)
+        .collect()
 }
 
 fn parse_prompt_variant_response(response: &str) -> Option<String> {
@@ -656,6 +666,7 @@ async fn generate_prompt_variants(
                         target_model_id: None,
                         message: "provider returned an invalid brainstorm prompt variant"
                             .to_string(),
+                        response_preview: Some(invalid_response_preview(&response)),
                     });
                 }
             }
@@ -665,6 +676,7 @@ async fn generate_prompt_variants(
                 model_id,
                 target_model_id: None,
                 message: err.to_string(),
+                response_preview: None,
             }),
             Ok((model_id, Err(_))) => {
                 let err = ProviderError::Timeout {
@@ -677,6 +689,7 @@ async fn generate_prompt_variants(
                     model_id,
                     target_model_id: None,
                     message: err.to_string(),
+                    response_preview: None,
                 });
             }
             Err(err) => provider_failures.push(BrainstormProviderFailure {
@@ -685,6 +698,7 @@ async fn generate_prompt_variants(
                 model_id: join_error_model_id(),
                 target_model_id: None,
                 message: err.to_string(),
+                response_preview: None,
             }),
         }
     }
@@ -854,6 +868,7 @@ pub async fn run(
                             model_id,
                             target_model_id: None,
                             message: "provider returned an empty proposal".to_string(),
+                            response_preview: None,
                         });
                     } else {
                         round_proposals.insert(model_id, answer);
@@ -867,6 +882,7 @@ pub async fn run(
                         model_id,
                         target_model_id: None,
                         message: err.to_string(),
+                        response_preview: None,
                     });
                 }
                 Ok((model_id, Err(_))) => {
@@ -881,6 +897,7 @@ pub async fn run(
                         model_id,
                         target_model_id: None,
                         message: err.to_string(),
+                        response_preview: None,
                     });
                 }
                 Err(err) => {
@@ -891,6 +908,7 @@ pub async fn run(
                         model_id: join_error_model_id(),
                         target_model_id: None,
                         message: err.to_string(),
+                        response_preview: None,
                     });
                 }
             }
@@ -1050,6 +1068,7 @@ pub async fn run(
                             target_model_id: Some(to),
                             message: "provider returned an invalid brainstorm evaluation score"
                                 .to_string(),
+                            response_preview: Some(invalid_response_preview(&response)),
                         });
                     }
                 }
@@ -1062,6 +1081,7 @@ pub async fn run(
                         model_id: from,
                         target_model_id: Some(to),
                         message: err.to_string(),
+                        response_preview: None,
                     });
                 }
                 Ok((from, to, Err(_))) => {
@@ -1077,6 +1097,7 @@ pub async fn run(
                         model_id: from,
                         target_model_id: Some(to),
                         message: err.to_string(),
+                        response_preview: None,
                     });
                 }
                 Err(err) => {
@@ -1088,6 +1109,7 @@ pub async fn run(
                         model_id: join_error_model_id(),
                         target_model_id: None,
                         message: err.to_string(),
+                        response_preview: None,
                     });
                 }
             }
@@ -1334,13 +1356,18 @@ fn save_provider_failures(
     let failures_json: Vec<serde_json::Value> = failures
         .iter()
         .map(|failure| {
-            serde_json::json!({
+            let mut failure_json = serde_json::json!({
                 "round": failure.round,
                 "phase": failure.phase.to_string(),
                 "model_id": failure.model_id.to_string(),
                 "target_model_id": failure.target_model_id.as_ref().map(ToString::to_string),
                 "message": &failure.message,
-            })
+            });
+            if let Some(response_preview) = &failure.response_preview {
+                failure_json["response_preview"] =
+                    serde_json::Value::String(response_preview.clone());
+            }
+            failure_json
         })
         .collect();
     std::fs::write(
@@ -1399,6 +1426,14 @@ mod tests {
             quality_floor: None,
             output_dir: None,
         }
+    }
+
+    #[test]
+    fn invalid_response_preview_is_bounded() {
+        let response = "x".repeat(INVALID_RESPONSE_PREVIEW_CHARS + 10);
+        let preview = invalid_response_preview(&response);
+
+        assert_eq!(preview.len(), INVALID_RESPONSE_PREVIEW_CHARS);
     }
 
     #[test]
@@ -1840,6 +1875,34 @@ mod tests {
                 .any(|failure| failure.phase == Phase::Evaluate
                     && failure.model_id == ModelId::new("test/fails_on_eval")
                     && failure.target_model_id == Some(ModelId::new("test/ok")))
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn invalid_evaluation_failure_captures_response_preview() {
+        let valid = EchoProvider::new("test/valid");
+        valid.queue_response(r#"{"answer": "valid answer"}"#.to_string());
+        valid.queue_response(eval_json(8));
+
+        let invalid = EchoProvider::new("test/invalid");
+        invalid.queue_response(r#"{"answer": "invalid answer"}"#.to_string());
+        invalid.queue_response(r#"{"rationale":"not numeric","score":"excellent"}"#.to_string());
+
+        let providers: Vec<Arc<dyn ModelProvider>> = vec![Arc::new(valid), Arc::new(invalid)];
+        let config = default_config(1, 2);
+        let result = run(&providers, "test prompt", &config).await.unwrap();
+
+        let failure = result
+            .provider_failures
+            .iter()
+            .find(|failure| failure.model_id == ModelId::new("test/invalid"))
+            .expect("invalid evaluator should be captured as a provider failure");
+
+        assert_eq!(failure.phase, Phase::Evaluate);
+        assert_eq!(failure.target_model_id, Some(ModelId::new("test/valid")));
+        assert_eq!(
+            failure.response_preview.as_deref(),
+            Some(r#"{"rationale":"not numeric","score":"excellent"}"#)
         );
     }
 

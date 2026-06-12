@@ -17,6 +17,7 @@ todo: 013-brainstorm-strategy-benchmarks
 **Addendum:** 2026-06-05 — Ran an updated-model L3 smoke with `pi/kimi-coding/kimi-for-coding:off` and `pi/minimax/MiniMax-M3:off`; see `docs/brainstorms/2026-06-05-brainstorm-l3-updated-model-smoke.md`.
 **Addendum:** 2026-06-09 — Ran a two-prompt three-model L3 comparison (`off` vs `per-model`) with Codex, GLM, and Kimi-for-coding; see `docs/brainstorms/2026-06-09-brainstorm-l3-three-model-sample.md`.
 **Addendum:** 2026-06-11 — Completed a verified brainstorm evaluation parser hardening pass for GLM-style invalid-score failures: score parsing now accepts scaled score text, nested score objects, `overall_score`, and a missing-overall fallback to the four required dimension scores. Targeted parser/brainstorm tests and `refinery_core` clippy passed.
+**Addendum:** 2026-06-12 — Live L3 parser validation still produced invalid evaluation summaries after `dc805a7`; see `docs/brainstorms/2026-06-12-brainstorm-l3-parser-validation.md`. Added bounded raw response-preview capture for invalid brainstorm structured-response parse failures so the next degraded run preserves triage evidence.
 
 ## Context
 
@@ -179,7 +180,7 @@ Result: `score-only` remained strongest on useful diversity/non-overlap; `full-v
 
 ## Next Implementation Step
 
-Continue `todos/013` with either a human/calibrated model-judge pass over `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md`, 2-4 more L3 prompts with the Codex/GLM/Kimi-for-coding panel, or hardening/triage for GLM invalid evaluation scores on expanded prompt-reframing runs. The 2026-06-05 updated-model smoke showed Kimi-for-coding and MiniMax M3 are available through Pi, but MiniMax M3 can dominate runtime and timed out on one expanded product-prompt lineage; do not launch a full 4-model × 6-prompt L3 suite until latency/output budget controls are explicit. The 2026-06-09 three-model sample showed promising quality-floor/disagreement gains for `per-model`, but both expanded runs degraded due to evaluator failures. Do not change the production default based on the first-pass L2 review or small L3 samples alone.
+Continue `todos/013` with either a human/calibrated model-judge pass over `docs/brainstorms/2026-06-01-brainstorm-l2-panel-review.md`, or a small L3 rerun with the Codex/GLM/Kimi-for-coding panel after raw invalid-response previews are available. The 2026-06-05 updated-model smoke showed Kimi-for-coding and MiniMax M3 are available through Pi, but MiniMax M3 can dominate runtime and timed out on one expanded product-prompt lineage; do not launch a full 4-model × 6-prompt L3 suite until latency/output budget controls are explicit. The 2026-06-09 three-model sample showed promising quality-floor/disagreement gains for `per-model`, but both expanded runs degraded due to evaluator failures. The 2026-06-12 parser validation confirmed invalid evaluation summaries persist after parser hardening, so preserve raw invalid responses before further parser/prompt guessing. Do not change the production default based on the first-pass L2 review or small L3 samples alone.
 
 ## Verification
 
