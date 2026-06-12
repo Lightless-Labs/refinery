@@ -106,7 +106,9 @@ Latest L3 three-model sample is documented in `docs/brainstorms/2026-06-09-brain
 
 A verified parser hardening pass for recoverable GLM-style invalid evaluation scores completed on 2026-06-11. Brainstorm evaluation parsing now accepts scaled score text, nested score objects, `overall_score`, and a missing-overall fallback to the four required dimension scores while rejecting incomplete dimension sets. Verified with targeted parser tests, `cargo test -p refinery_core brainstorm -q`, and `cargo clippy -p refinery_core --all-targets -- -D warnings`.
 
-Next concrete step: either run a human/calibrated model-judge pass over the L2/L3 panel findings, run 2-4 more L3 prompts with the same three-model panel to validate the parser hardening in live Pi-backed expanded runs, or continue deeper GLM triage if invalid scores persist. For L3, use `score-only` as the baseline, treat `own-reviews` as optional, and avoid launching a full 4-model × 6-prompt suite with MiniMax M3 until latency/output budget controls are explicit.
+A live post-hardening L3 validation on 2026-06-12 is documented in `docs/brainstorms/2026-06-12-brainstorm-l3-parser-validation.md`. It still degraded: baseline had one GLM invalid eval score, while expanded prompt-reframing had Kimi overload/rate-limit failures plus one Kimi invalid eval score. This does not prove a remaining score-shape parser gap; the next code step is evidence capture to distinguish malformed/empty/provider output from genuinely unhandled score JSON.
+
+Next concrete step: rerun a small L3 validation and inspect bounded `response_preview` fields for any invalid structured-response parse failures, or run a human/calibrated model-judge pass over the L2/L3 panel findings. For L3, use `score-only` as the baseline, treat `own-reviews` as optional, and avoid launching a full 4-model × 6-prompt suite with MiniMax M3 until latency/output budget controls are explicit.
 
 ## References
 

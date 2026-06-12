@@ -82,6 +82,8 @@ struct ProviderFailureOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     target_model_id: Option<String>,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_preview: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -385,6 +387,7 @@ fn provider_failure_output(failure: &BrainstormProviderFailure) -> ProviderFailu
         model_id: failure.model_id.to_string(),
         target_model_id: failure.target_model_id.as_ref().map(ToString::to_string),
         message: failure.message.clone(),
+        response_preview: failure.response_preview.clone(),
     }
 }
 
