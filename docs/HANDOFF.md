@@ -93,6 +93,61 @@ Triage pattern: fix P1/P2 with code, create TODOs for P3/nitpicks, reply to ever
 - Brainstorm divergence discussion captured in `docs/plans/2026-03-31-001-feat-brainstorm-verb-plan.md` addendum and `todos/018-brainstorm-divergence-expansion.md`: v0 preserves divergence through score-only controversial selection; future work should inject divergence via prompt reframing (`n(n+1)` lineages) and optional Open Collider-style domain collisions (`n(1+p)d` lineages).
 - `docs/solutions/` has solution docs covering Ctrl+C/SIGINT, provider quirks, prompt injection, tiebreaking, etc.
 
+## Next L3 Validation Runbook
+
+Purpose: live-validate commit `dc805a7` (`fix: harden brainstorm evaluation score parsing`) against the GLM invalid-evaluation failures observed in the 2026-06-09 expanded L3 runs.
+
+Suggested artifact root:
+
+```text
+target/brainstorm-benchmark-2026-06-11-l3-parser-validation/
+```
+
+For each selected prompt, run a paired baseline and expanded prompt-reframing run with the same three-model panel:
+
+```sh
+ROOT=target/brainstorm-benchmark-2026-06-11-l3-parser-validation
+PROMPT='<one L3 benchmark prompt>'
+mkdir -p "$ROOT/logs"
+
+cargo run -q -p refinery_cli -- brainstorm "$PROMPT" \
+  --models pi/openai-codex/gpt-5.4:off,pi/zai/glm-5.1:off,pi/kimi-coding/kimi-for-coding:off \
+  --max-rounds 2 \
+  --panel-size 3 \
+  --quality-floor 7.0 \
+  --iteration-strategy score-only \
+  --prompt-variants off \
+  --output-dir "$ROOT/off/<prompt-slug>" \
+  --output-format json \
+  --verbose \
+  --idle-timeout 480 \
+  --timeout 1800 \
+  --max-concurrent 1 > "$ROOT/logs/<prompt-slug>-off.json" 2> "$ROOT/logs/<prompt-slug>-off.stderr.log"
+
+cargo run -q -p refinery_cli -- brainstorm "$PROMPT" \
+  --models pi/openai-codex/gpt-5.4:off,pi/zai/glm-5.1:off,pi/kimi-coding/kimi-for-coding:off \
+  --max-rounds 2 \
+  --panel-size 3 \
+  --quality-floor 7.0 \
+  --iteration-strategy score-only \
+  --prompt-variants per-model \
+  --output-dir "$ROOT/per-model/<prompt-slug>" \
+  --output-format json \
+  --verbose \
+  --idle-timeout 480 \
+  --timeout 1800 \
+  --max-concurrent 1 > "$ROOT/logs/<prompt-slug>-per-model.json" 2> "$ROOT/logs/<prompt-slug>-per-model.stderr.log"
+```
+
+Record each generated run directory in `$ROOT/logs/run-dirs.txt`, then analyze with:
+
+```sh
+cargo run -q -p refinery_cli -- benchmark-brainstorm $(cat "$ROOT/logs/run-dirs.txt") --output-format text > "$ROOT/logs/l3-parser-validation-analysis.txt"
+cargo run -q -p refinery_cli -- benchmark-brainstorm $(cat "$ROOT/logs/run-dirs.txt") --output-format json > "$ROOT/logs/l3-parser-validation-analysis.json"
+```
+
+Decision check: inspect every `provider-failures.json`. If GLM still reports `provider returned an invalid brainstorm evaluation score`, preserve/capture the raw invalid evaluation response in the next code pass before further parser guessing. If expanded runs are non-degraded, continue 2-4 total prompts and compare against `docs/brainstorms/2026-06-09-brainstorm-l3-three-model-sample.md`.
+
 ## Next Clean Session
 
 Recommended order:
