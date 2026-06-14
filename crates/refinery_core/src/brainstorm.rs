@@ -1907,6 +1907,41 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn invalid_evaluation_failure_artifact_includes_response_preview() {
+        let valid = EchoProvider::new("test/valid");
+        valid.queue_response(r#"{"answer": "valid answer"}"#.to_string());
+        valid.queue_response(eval_json(8));
+
+        let invalid_response = r#"{"rationale":"not numeric","score":"excellent"}"#;
+        let invalid = EchoProvider::new("test/invalid");
+        invalid.queue_response(r#"{"answer": "invalid answer"}"#.to_string());
+        invalid.queue_response(invalid_response.to_string());
+
+        let output_dir = std::env::temp_dir().join(format!(
+            "refinery-invalid-preview-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let _ = std::fs::remove_dir_all(&output_dir);
+
+        let providers: Vec<Arc<dyn ModelProvider>> = vec![Arc::new(valid), Arc::new(invalid)];
+        let mut config = default_config(1, 2);
+        config.output_dir = Some(output_dir.clone());
+        run(&providers, "test prompt", &config).await.unwrap();
+
+        let failures_path = output_dir.join("provider-failures.json");
+        let failures: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&failures_path)
+                .expect("provider failures artifact should be written"),
+        )
+        .expect("provider failures artifact should be valid JSON");
+
+        assert_eq!(failures[0]["response_preview"], invalid_response);
+
+        let _ = std::fs::remove_dir_all(output_dir);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn controversial_answer_ranks_higher() {
         // 3 models, 1 round.
         // Queue order per model: [propose, eval_of_other1, eval_of_other2]
