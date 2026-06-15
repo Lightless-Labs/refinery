@@ -345,6 +345,16 @@ fn parse_score_text(text: &str) -> Option<f64> {
 
         let lower = trimmed.to_ascii_lowercase();
         if let Some(score_idx) = lower.rfind("score") {
+            let score_tail_start = score_idx + "score".len();
+            let score_tail = &trimmed[score_tail_start..];
+            if score_tail.contains(':') {
+                for segment in score_tail.split(':').skip(1) {
+                    if let Some(score) = parse_score_text_segment(segment) {
+                        return Some(score);
+                    }
+                }
+            }
+
             if let Some((start, end)) = number_spans
                 .iter()
                 .copied()
@@ -354,16 +364,31 @@ fn parse_score_text(text: &str) -> Option<f64> {
             }
         }
 
-        if let Some((start, end)) = number_spans.first().copied() {
-            let after_first = lower[end..].trim_start();
-            if after_first.starts_with("out of") || after_first.starts_with("/10") {
-                return trimmed[start..end].parse::<f64>().ok();
-            }
+        if let Some(score) = parse_score_text_segment(trimmed) {
+            return Some(score);
         }
 
         let (start, end) = number_spans.last().copied()?;
         trimmed[start..end].parse::<f64>().ok()
     })
+}
+
+fn parse_score_text_segment(text: &str) -> Option<f64> {
+    let spans = number_spans(text);
+    let (first_start, first_end) = spans.first().copied()?;
+    let lower = text.to_ascii_lowercase();
+    let after_first = lower[first_end..].trim_start();
+
+    if after_first.starts_with("out of") || after_first.starts_with('/') {
+        return text[first_start..first_end].parse::<f64>().ok();
+    }
+
+    if lower.contains("scale") && spans.len() > 1 {
+        return None;
+    }
+
+    let (start, end) = spans.last().copied()?;
+    text[start..end].parse::<f64>().ok()
 }
 
 fn number_spans(text: &str) -> Vec<(usize, usize)> {
@@ -1433,7 +1458,7 @@ mod tests {
         let response = "x".repeat(INVALID_RESPONSE_PREVIEW_CHARS + 10);
         let preview = invalid_response_preview(&response);
 
-        assert_eq!(preview.len(), INVALID_RESPONSE_PREVIEW_CHARS);
+        assert_eq!(preview.chars().count(), INVALID_RESPONSE_PREVIEW_CHARS);
     }
 
     #[test]
@@ -1461,6 +1486,56 @@ mod tests {
         let parsed =
             parse_brainstorm_evaluation_response(r#"{"rationale":"good tension","score":"8/10"}"#)
                 .expect("slash-scale score text should parse");
+
+        assert!((parsed.score - 8.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_accepts_spaced_slash_scale_without_using_denominator() {
+        let parsed = parse_brainstorm_evaluation_response(
+            r#"{"rationale":"good tension","score":"8.5 / 10"}"#,
+        )
+        .expect("spaced slash-scale score text should parse");
+
+        assert!((parsed.score - 8.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_uses_score_after_labeled_scale() {
+        let parsed = parse_brainstorm_evaluation_response(
+            r#"{"rationale":"good tension","score":"Score (1-10): 8"}"#,
+        )
+        .expect("score after labeled scale should parse");
+
+        assert!((parsed.score - 8.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_uses_score_after_unparenthesized_labeled_scale() {
+        let parsed = parse_brainstorm_evaluation_response(
+            r#"{"rationale":"good tension","score":"Score 1-10: 8"}"#,
+        )
+        .expect("score after unparenthesized labeled scale should parse");
+
+        assert!((parsed.score - 8.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_uses_score_after_labeled_scale_with_two_colons() {
+        let parsed = parse_brainstorm_evaluation_response(
+            r#"{"rationale":"good tension","score":"score: on a 1-10 scale: 8"}"#,
+        )
+        .expect("score after labeled scale with two colons should parse");
+
+        assert!((parsed.score - 8.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_brainstorm_evaluation_keeps_score_before_later_labeled_prose() {
+        let parsed = parse_brainstorm_evaluation_response(
+            r#"{"rationale":"good tension","score":"Score: 8 rationale: strong but risky"}"#,
+        )
+        .expect("score before later labeled prose should parse");
 
         assert!((parsed.score - 8.0).abs() < f64::EPSILON);
     }
